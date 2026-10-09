@@ -13,26 +13,61 @@ const mapSelect = $('#mapSelect'), mapPreview = $('#mapPreview'), classGrid = $(
 const arenaWrap = $('.arena-wrap'), scoreOverlay = $('#scoreOverlay'), overlayScore = $('#overlayScore');
 const prepScore = $('#prepScore'), prepClass = $('#prepClass');
 const modeSelect = $('#modeSelect'), brBanner = $('#brBanner'), leftLabel = $('#leftLabel'), rightLabel = $('#rightLabel');
+const setWins = $('#setWins'), setZone = $('#setZone'), setPowers = $('#setPowers'), winsLabel = $('#winsLabel'), zoneSetting = $('#zoneSetting'), settingsHint = $('#settingsHint');
+const colorPicker = $('#colorPicker'), joinUrl = $('#joinUrl'), joinOther = $('#joinOther'), qrBox = $('#qr'), awardsEl = $('#awards');
+const soundToggle = $('#soundToggle'), mouseToggle = $('#mouseToggle'), mouseHelp = $('#mouseHelp');
 
 let walls = [], worldW = 960, worldH = 560, theme = null;
 let state = { mode: 'lobby', gameMode: 'teams', tanks: [], bullets: [], score: [0, 0], running: false, winner: '', powerups: [] };
-let mines = [], seenFxSeq = 0, explosionAnims = [], seenPickupSeq = 0, pickupAnims = [];
-const isBR = () => state.gameMode === 'br';
-const BR_WINS = 3;
-const POWER_INFO = {
-  speed:  { color: '#fb923c', icon: '⚡', name: 'Turbo' },
-  shield: { color: '#a78bfa', icon: '◆', name: 'Bouclier' },
-  rapid:  { color: '#22d3ee', icon: '»', name: 'Tir rapide' },
-  homing: { color: '#f472b6', icon: '🎯', name: 'Téléguidé' },
-  rocket: { color: '#ef4444', icon: '🚀', name: 'Roquette' },
-  spread: { color: '#4ade80', icon: '✳', name: 'Tir x5' },
-  bouncy: { color: '#e879f9', icon: '∞', name: 'Rebond infini' },
-  mine:   { color: '#94a3b8', icon: '💣', name: 'Mines' },
+let mines = [], seenFxSeq = 0, explosionAnims = [], seenPickupSeq = 0, pickupAnims = [], seenNoticeSeq = 0, noticeAnims = [];
+let tracks = [], wrecks = [], shake = 0, hurtFlash = 0;
+const mode = () => state.gameMode || 'teams';
+const isBR = () => mode() === 'br';
+const isFFA = () => mode() === 'br' || mode() === 'elim';          // chacun pour soi
+const isRespawn = () => ['koth', 'ctf', 'elim'].includes(mode());   // une seule manche avec réapparitions
+const DEFAULT_SETTINGS = { teamsWins: 5, brWins: 3, ctfCaps: 3, kothTime: 60, elimLives: 3, zoneSpeed: 'normal', powers: {} };
+const settings = () => state.settings || DEFAULT_SETTINGS;
+const plural = (n, word) => `${n} ${word}${n > 1 ? 's' : ''}`;
+const MODE_INFO = {
+  teams: { icon: '⚔', name: 'Équipes', text: s => `jaune contre bleu, la dernière équipe en vie gagne la manche. Première équipe à <b>${plural(s.teamsWins, 'manche')}</b>.` },
+  br:    { icon: '👑', name: 'Battle royale', text: s => `chacun pour soi, pas d'équipes ! Une zone rouge rétrécit : reste dedans. Le premier à <b>${plural(s.brWins, 'manche')}</b> gagne.` },
+  koth:  { icon: '⛰', name: 'Roi de la colline', text: s => `jaune contre bleu : tenez la colline au centre. La première équipe à <b>${s.kothTime} s</b> de contrôle gagne. Réapparition après 3 s.` },
+  ctf:   { icon: '🚩', name: 'Capture du drapeau', text: s => `vole le drapeau ennemi et ramène-le à ta base (ton propre drapeau doit y être). <b>${plural(s.ctfCaps, 'capture')}</b> pour gagner. Réapparition après 3 s.` },
+  elim:  { icon: '💀', name: 'Élimination', text: s => `chacun pour soi avec <b>${plural(s.elimLives, 'vie')}</b> pour toute la partie. Le dernier survivant gagne.` },
 };
+// Réglage principal de chaque mode : [clé, libellé, min, max]
+const WIN_SETTING = {
+  teams: ['teamsWins', 'Manches pour gagner', 1, 15], br: ['brWins', 'Manches pour gagner', 1, 10],
+  koth: ['kothTime', 'Secondes sur la colline', 15, 300], ctf: ['ctfCaps', 'Captures pour gagner', 1, 10], elim: ['elimLives', 'Vies par joueur', 1, 10],
+};
+const POWER_INFO = {
+  speed:    { color: '#fb923c', icon: '⚡', name: 'Turbo' },
+  shield:   { color: '#a78bfa', icon: '◆', name: 'Bouclier' },
+  rapid:    { color: '#22d3ee', icon: '»', name: 'Tir rapide' },
+  homing:   { color: '#f472b6', icon: '🎯', name: 'Téléguidé' },
+  rocket:   { color: '#ef4444', icon: '🚀', name: 'Roquette' },
+  spread:   { color: '#4ade80', icon: '✳', name: 'Tir x5' },
+  bouncy:   { color: '#e879f9', icon: '∞', name: 'Rebond infini' },
+  mine:     { color: '#94a3b8', icon: '💣', name: 'Mines' },
+  invis:    { color: '#cbd5e1', icon: '👻', name: 'Invisible' },
+  laser:    { color: '#f43f5e', icon: '✦', name: 'Laser' },
+  magnet:   { color: '#facc15', icon: '🧲', name: 'Aimant' },
+  teleport: { color: '#38bdf8', icon: '🌀', name: 'Téléport' },
+};
+let PALETTE = ['#ffd24d', '#75d8ff', '#f87171', '#a3e635', '#c084fc', '#fb923c', '#f472b6', '#2dd4bf', '#e5e7eb', '#fde047', '#60a5fa', '#34d399', '#fca5a5', '#d8b4fe', '#fdba74', '#5eead4'];
+let ADDRESSES = [];
 let players = [], keys = {}, id = '', ws, retry;
 let visualTanks = new Map(), snapshotAt = performance.now(), lastFrame = performance.now();
 let seenKillSeq = 0, killAnimations = [], debris = [];
 let tabHeld = false;
+
+// Préférences du joueur, gardées dans ce navigateur.
+const pref = (key, fallback) => { try { const v = localStorage.getItem(key); return v === null ? fallback : v; } catch (_) { return fallback; } };
+const savePref = (key, value) => { try { localStorage.setItem(key, value); } catch (_) {} };
+let soundOn = pref('sound', 'on') !== 'off', mouseAim = pref('mouseAim', 'off') === 'on';
+soundToggle.checked = soundOn; mouseToggle.checked = mouseAim; mouseHelp.hidden = !mouseAim;
+soundToggle.onchange = () => { soundOn = soundToggle.checked; savePref('sound', soundOn ? 'on' : 'off'); };
+mouseToggle.onchange = () => { mouseAim = mouseToggle.checked; mouseHelp.hidden = !mouseAim; savePref('mouseAim', mouseAim ? 'on' : 'off'); };
 
 // Caractéristiques des classes (remplacées par celles du serveur à la connexion).
 let CLASSES = {
@@ -53,6 +88,7 @@ const SHAPES = {
 };
 
 const TEAM_NAME = { yellow: 'jaune', blue: 'bleue' };
+const TEAM_COLOR = { yellow: '#ffd24d', blue: '#75d8ff' };
 const FIGHTER_TEAMS = ['yellow', 'blue', 'player'];
 const isFighter = p => FIGHTER_TEAMS.includes(p?.team);
 const teamBoard = $('#teamBoard'), brColumn = $('.br-column');
@@ -72,19 +108,20 @@ function rosterItem(p) {
   const mine = p.id === id, bot = p.isBot;
   const role = bot ? `IA ${p.difficulty === 'easy' ? 'facile' : p.difficulty === 'hard' ? 'difficile' : 'normale'}` : p.host ? 'Hôte du salon' : 'Joueur';
   const removeBtn = bot && me()?.host ? `<button type="button" class="remove-bot" data-remove-bot="${p.id}" title="Retirer ce bot">×</button>` : '';
-  return `<div class="roster-item ${bot ? 'bot' : ''} ${mine ? 'mine' : ''}"><span class="roster-avatar">${bot ? 'BOT' : escapeHtml(p.name).slice(0, 1).toUpperCase()}</span><div><b>${escapeHtml(p.name)}</b><small>${role} · ${className(p.tankClass)}</small></div>${removeBtn}</div>`;
+  const ring = p.prefColor ? ` style="box-shadow:inset 0 0 0 2px ${p.prefColor}"` : '';
+  return `<div class="roster-item ${bot ? 'bot' : ''} ${mine ? 'mine' : ''}"><span class="roster-avatar"${ring}>${bot ? 'BOT' : escapeHtml(p.name).slice(0, 1).toUpperCase()}</span><div><b>${escapeHtml(p.name)}</b><small>${role} · ${className(p.tankClass)}</small></div>${removeBtn}</div>`;
 }
 
 let lobbySignature = '';
 function renderLobby() {
   const mine = me();
-  const signature = JSON.stringify([players.map(p => [p.id, p.name, p.team, p.host, p.tankClass, p.difficulty]), id, state.map?.id, state.gameMode]);
+  const signature = JSON.stringify([players.map(p => [p.id, p.name, p.team, p.host, p.tankClass, p.difficulty, p.prefColor]), id, state.map?.id, state.gameMode, state.settings, ADDRESSES]);
   if (signature === lobbySignature) return;
   lobbySignature = signature;
 
-  const br = isBR();
-  teamBoard.classList.toggle('br-mode', br);
-  brColumn.hidden = !br;
+  const ffa = isFFA();
+  teamBoard.classList.toggle('br-mode', ffa);
+  brColumn.hidden = !ffa;
   const groups = { player: [], yellow: [], spectator: [], blue: [] };
   for (const p of players) (groups[p.team] || groups.spectator).push(p);
   for (const team of ['player', 'yellow', 'spectator', 'blue']) {
@@ -107,14 +144,61 @@ function renderLobby() {
   mapSelect.disabled = !mine?.host;
   if (state.map && mapSelect.value !== state.map.id) mapSelect.value = state.map.id;
   modeSelect.disabled = !mine?.host;
-  modeSelect.value = state.gameMode || 'teams';
-  brBanner.hidden = !isBR();
-  const fighters = groups.player.length + groups.yellow.length + groups.blue.length, needed = br ? 2 : 1;
+  modeSelect.value = mode();
+  const info = MODE_INFO[mode()] || MODE_INFO.teams;
+  brBanner.innerHTML = `${info.icon} <b>${info.name}</b> : ${info.text(settings())}`;
+  renderSettings(mine); renderColorPicker(mine); renderJoinCard();
+  const fighters = groups.player.length + groups.yellow.length + groups.blue.length, needed = ffa ? 2 : 1;
   statusEl.textContent = mine?.host
     ? (fighters >= needed ? 'Le salon est prêt. Lance la partie quand tu veux.'
-      : br ? 'Il faut au moins 2 participants (joueurs ou bots) pour une battle royale.' : 'Ajoute au moins un joueur ou un bot dans une équipe.')
+      : ffa ? 'Il faut au moins 2 participants (joueurs ou bots) dans ce mode.' : 'Ajoute au moins un joueur ou un bot dans une équipe.')
     : 'En attente du lancement par l’hôte.';
   startBtn.disabled = fighters < needed;
+}
+
+// Réglages de la partie (modifiables par l'hôte seulement).
+function renderSettings(mine) {
+  const s = settings(), host = !!mine?.host;
+  const [key, label, min, max] = WIN_SETTING[mode()] || WIN_SETTING.teams;
+  winsLabel.textContent = label; setWins.min = min; setWins.max = max; setWins.dataset.key = key;
+  if (document.activeElement !== setWins) setWins.value = s[key];
+  setWins.disabled = !host; setZone.disabled = !host; setZone.value = s.zoneSpeed || 'normal';
+  zoneSetting.hidden = !isBR();
+  settingsHint.textContent = host ? 'Tu es l’hôte : tu peux tout modifier.' : 'Seul l’hôte peut les modifier.';
+  setPowers.innerHTML = Object.entries(POWER_INFO).map(([k, p]) =>
+    `<button type="button" data-power="${k}" class="${s.powers?.[k] === false ? '' : 'on'}" style="--chip:${p.color}" ${host ? '' : 'disabled'}>${p.icon} ${p.name}</button>`).join('');
+}
+setWins.onchange = () => send({ type: 'settings', settings: { [setWins.dataset.key]: Number(setWins.value) } });
+setZone.onchange = () => send({ type: 'settings', settings: { zoneSpeed: setZone.value } });
+setPowers.onclick = event => {
+  const b = event.target.closest('[data-power]');
+  if (b && !b.disabled) send({ type: 'settings', settings: { powers: { [b.dataset.power]: !b.classList.contains('on') } } });
+};
+
+function renderColorPicker(mine) {
+  colorPicker.innerHTML = PALETTE.map(col => `<button type="button" data-color="${col}" class="${mine?.prefColor === col ? 'active' : ''}" style="background:${col}" title="Couleur de ton char"></button>`).join('');
+}
+colorPicker.onclick = event => {
+  const b = event.target.closest('[data-color]');
+  if (!b) return;
+  send({ type: 'style', color: b.dataset.color }); savePref('tankColor', b.dataset.color);
+};
+
+// Adresse à taper sur l'autre appareil + QR code (la bibliothèque QR vient d'Internet ; sans connexion, l'adresse suffit).
+let qrDone = '', qrTries = 0;
+function renderJoinCard() {
+  const list = ADDRESSES.filter(a => !a.includes('127.0.0.1')), main = list[0];
+  joinUrl.textContent = main || 'Aucun réseau détecté';
+  joinOther.textContent = list.length > 1 ? `Si ça ne marche pas, essaie : ${list.slice(1).join(' · ')}` : 'Même Wi-Fi requis. Scanne le QR code ou tape l’adresse.';
+  if (!main || qrDone === main) return;
+  if (!window.QRCode) {
+    qrBox.textContent = qrTries < 8 ? 'QR code…' : 'QR code indisponible hors ligne';
+    if (qrTries++ < 8) setTimeout(() => { lobbySignature = ''; renderLobby(); }, 1000);
+    return;
+  }
+  qrBox.innerHTML = '';
+  new QRCode(qrBox, { text: main, width: 84, height: 84, colorDark: '#0d1410', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+  qrDone = main;
 }
 
 function populateMaps(maps) {
@@ -142,7 +226,7 @@ function buildClassPicker() {
   });
   classGrid.querySelectorAll('[data-class]').forEach(b => b.onclick = () => {
     send({ type: 'tank_class', tankClass: b.dataset.class });
-    try { localStorage.setItem('tankClass', b.dataset.class); } catch (_) {}
+    savePref('tankClass', b.dataset.class);
   });
   lobbySignature = '';
 }
@@ -160,15 +244,19 @@ function renderMapPreview() {
   g.clearRect(0, 0, mapPreview.width, mapPreview.height);
   g.fillStyle = t.floor || '#172119'; g.fillRect(ox, oy, m.w * s, m.h * s);
   for (const w of m.walls) {
-    g.fillStyle = w.kind === 'crate' ? '#b07a43' : (t.wall || '#7b5b3c');
+    g.fillStyle = w.kind === 'crate' ? '#b07a43' : w.kind === 'ruin' ? '#9a6a4f' : (t.wall || '#7b5b3c');
     g.fillRect(ox + w.x * s, oy + w.y * s, Math.max(1.5, w.w * s), Math.max(1.5, w.h * s));
   }
+  g.fillStyle = '#38bdf8';
+  for (const tp of m.teleporters || []) for (const [px, py] of [[tp.ax, tp.ay], [tp.bx, tp.by]]) { g.beginPath(); g.arc(ox + px * s, oy + py * s, 3, 0, 7); g.fill(); }
+  const cx = ox + m.w * s / 2, cy = oy + m.h * s / 2;
   if (isBR()) {
     g.strokeStyle = 'rgba(248,113,113,.8)'; g.setLineDash([4, 3]); g.lineWidth = 1.5;
-    g.beginPath(); g.arc(ox + m.w * s / 2, oy + m.h * s / 2, Math.min(m.w, m.h) * s * 0.42, 0, 7); g.stroke(); g.setLineDash([]);
-  } else {
+    g.beginPath(); g.arc(cx, cy, Math.min(m.w, m.h) * s * 0.42, 0, 7); g.stroke(); g.setLineDash([]);
+  } else if (!isFFA()) {
     g.fillStyle = '#f1ce5c'; g.fillRect(ox + 4, oy + m.h * s / 2 - 6, 3, 12);
     g.fillStyle = '#83d2f6'; g.fillRect(ox + m.w * s - 7, oy + m.h * s / 2 - 6, 3, 12);
+    if (mode() === 'koth') { g.strokeStyle = '#d8ef5a'; g.lineWidth = 1.5; g.beginPath(); g.arc(cx, cy, 95 * s, 0, 7); g.stroke(); }
   }
   if (m.random) {
     g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(0, 0, mapPreview.width, mapPreview.height);
@@ -178,31 +266,57 @@ function renderMapPreview() {
 }
 
 // =============================================================================
-// Tableau des scores (touche Tab + écran d'amélioration)
+// Tableau des scores (touche Tab, écran d'amélioration et fin de partie)
 // =============================================================================
 
-function brScoreHTML() {
-  const list = players.filter(isFighter)
-    .sort((a, b) => (b.brWins || 0) - (a.brWins || 0) || (b.kills || 0) - (a.kills || 0) || (a.deaths || 0) - (b.deaths || 0));
-  const rows = list.map((p, i) => `<tr class="${p.id === id ? 'me' : ''}"><td>${i === 0 && p.brWins ? '👑 ' : ''}<span class="color-dot" style="background:${p.color || '#888'}"></span>${escapeHtml(p.name)}${p.isBot ? ' <small>BOT</small>' : ''}${p.id === id ? ' <small>(toi)</small>' : ''}</td><td><small>${className(p.tankClass)}</small></td><td class="n">${p.brWins || 0}</td><td class="n">${p.kills || 0}</td><td class="n">${p.deaths || 0}</td></tr>`).join('');
-  return `<section class="score-team br"><header><span>👑 Battle royale</span><em>premier à ${BR_WINS} manches</em></header>
-    <table><thead><tr><th>Joueur</th><th>Char</th><th class="n">Manches</th><th class="n">Kills</th><th class="n">Morts</th></tr></thead><tbody>${rows}</tbody></table></section>`;
+const accuracy = p => p.shots ? (p.hits || 0) / p.shots : 0;
+const STAT_HEAD = '<th class="n">Kills</th><th class="n">Morts</th><th class="n" title="Part des obus qui touchent un ennemi">Préc.</th><th class="n">Dégâts</th><th class="n">Bonus</th>';
+const statCells = p => `<td class="n">${p.kills || 0}</td><td class="n">${p.deaths || 0}</td><td class="n">${p.shots ? Math.round(accuracy(p) * 100) + '%' : '–'}</td><td class="n">${p.dmg || 0}</td><td class="n">${p.pickups || 0}</td>`;
+const nameCells = (p, crown) => `<td>${crown ? '👑 ' : ''}<span class="color-dot" style="background:${p.color || p.prefColor || '#888'}"></span>${escapeHtml(p.name)}${p.isBot ? ' <small>BOT</small>' : ''}${p.id === id ? ' <small>(toi)</small>' : ''}</td><td><small>${className(p.tankClass)}</small></td>`;
+
+function ffaScoreHTML() {
+  const elim = mode() === 'elim', s = settings(), info = MODE_INFO[mode()];
+  const main = p => elim ? (p.lives || 0) : (p.brWins || 0);
+  const list = players.filter(isFighter).sort((a, b) => main(b) - main(a) || (b.kills || 0) - (a.kills || 0) || (a.deaths || 0) - (b.deaths || 0));
+  const rows = list.map((p, i) => `<tr class="${p.id === id ? 'me' : ''}">${nameCells(p, i === 0 && main(p) > 0)}<td class="n">${elim ? ('♥'.repeat(Math.max(0, p.lives || 0)) || '💀') : main(p)}</td>${statCells(p)}</tr>`).join('');
+  const goal = elim ? `${plural(s.elimLives, 'vie')} chacun` : `premier à ${plural(s.brWins, 'manche')}`;
+  return `<section class="score-team br"><header><span>${info.icon} ${info.name}</span><em>${goal}</em></header>
+    <table><thead><tr><th>Joueur</th><th>Char</th><th class="n">${elim ? 'Vies' : 'Manches'}</th>${STAT_HEAD}</tr></thead><tbody>${rows}</tbody></table></section>`;
+}
+
+function teamScoreText(value) {
+  if (mode() === 'koth') return `${value} s sur la colline`;
+  if (mode() === 'ctf') return plural(value, 'capture');
+  return plural(value, 'manche');
 }
 
 function scoreHTML() {
-  if (isBR()) return brScoreHTML();
+  if (isFFA()) return ffaScoreHTML();
   const teams = { yellow: [], blue: [] };
   for (const p of players) if (teams[p.team]) teams[p.team].push(p);
   return ['yellow', 'blue'].map((team, index) => {
     const list = teams[team].sort((a, b) => (b.kills || 0) - (a.kills || 0) || (a.deaths || 0) - (b.deaths || 0));
     const totalKills = list.reduce((sum, p) => sum + (p.kills || 0), 0);
-    const rounds = state.score?.[index] || 0;
-    const rows = list.map(p => `<tr class="${p.id === id ? 'me' : ''}"><td>${escapeHtml(p.name)}${p.isBot ? ' <small>BOT</small>' : ''}${p.id === id ? ' <small>(toi)</small>' : ''}</td><td><small>${className(p.tankClass)}</small></td><td class="n">${p.kills || 0}</td><td class="n">${p.deaths || 0}</td></tr>`).join('');
+    const rows = list.map(p => `<tr class="${p.id === id ? 'me' : ''}">${nameCells(p, false)}${statCells(p)}</tr>`).join('');
     return `<section class="score-team ${team}">
-      <header><span>Équipe ${TEAM_NAME[team]}</span><em>${rounds} manche${rounds > 1 ? 's' : ''} · ${totalKills} kill${totalKills > 1 ? 's' : ''}</em></header>
-      ${list.length ? `<table><thead><tr><th>Joueur</th><th>Char</th><th class="n">Kills</th><th class="n">Morts</th></tr></thead><tbody>${rows}</tbody></table>` : '<div class="empty">Aucun joueur</div>'}
+      <header><span>Équipe ${TEAM_NAME[team]}</span><em>${teamScoreText(state.score?.[index] || 0)} · ${plural(totalKills, 'kill')}</em></header>
+      ${list.length ? `<table><thead><tr><th>Joueur</th><th>Char</th>${STAT_HEAD}</tr></thead><tbody>${rows}</tbody></table>` : '<div class="empty">Aucun joueur</div>'}
     </section>`;
   }).join('');
+}
+
+// Récompenses de fin de partie.
+function awardsHTML() {
+  const list = players.filter(isFighter);
+  const best = (score, min = 1) => list.reduce((top, p) => score(p) >= min && (!top || score(p) > score(top)) ? p : top, null);
+  const precise = p => (p.shots || 0) >= 5 ? accuracy(p) : -1;
+  const items = [
+    ['🎯', 'Meilleur tueur', best(p => p.kills || 0), p => plural(p.kills, 'kill')],
+    ['🔫', 'Le plus précis', best(precise, 0), p => `${Math.round(accuracy(p) * 100)} % de tirs réussis`],
+    ['💥', 'Plus de dégâts', best(p => p.dmg || 0), p => plural(p.dmg, 'dégât')],
+    ['🎁', 'Chasseur de bonus', best(p => p.pickups || 0), p => `${p.pickups} bonus`],
+  ];
+  return items.filter(item => item[2]).map(([icon, label, p, text]) => `<div class="award"><i>${icon}</i><small>${label}</small><b>${escapeHtml(p.name)}</b><em>${text(p)}</em></div>`).join('');
 }
 
 let scoreSignature = '';
@@ -212,13 +326,15 @@ function renderScores() {
   const matchOver = playing && !state.running;
   // Visible en maintenant Tab, et automatiquement à la fin de la partie.
   scoreOverlay.hidden = !(playing && !prep && (tabHeld || matchOver));
-  const signature = JSON.stringify([players.map(p => [p.id, p.name, p.team, p.kills, p.deaths, p.tankClass, p.brWins, p.color]), state.score, id, state.gameMode]);
+  const signature = JSON.stringify([players.map(p => [p.id, p.name, p.team, p.kills, p.deaths, p.tankClass, p.brWins, p.color, p.lives, p.shots, p.hits, p.dmg, p.pickups]), state.score, id, state.gameMode, matchOver]);
   if (signature === scoreSignature) return;
   scoreSignature = signature;
-  overlayScore.classList.toggle('single', isBR()); prepScore.classList.toggle('single', isBR());
+  overlayScore.classList.toggle('single', isFFA()); prepScore.classList.toggle('single', isFFA());
   const html = scoreHTML();
   overlayScore.innerHTML = html;
   prepScore.innerHTML = html;
+  awardsEl.hidden = !matchOver;
+  if (matchOver) awardsEl.innerHTML = awardsHTML();
 }
 
 // =============================================================================
@@ -232,7 +348,7 @@ function renderUpgrades() {
   const help = $('.help');
   if (help) help.hidden = prep;
   abandon.hidden = prep; abandonMatch.hidden = prep;
-  abandon.textContent = isBR() ? 'S’autodétruire' : 'Abandonner la manche';
+  abandon.textContent = isFFA() || isRespawn() ? 'S’autodétruire' : 'Abandonner la manche';
   if (!prep) return;
   prepTimer.textContent = Math.max(0, Math.ceil(state.prepTimer || 0));
   prepClass.textContent = isFighter(mine) ? `Ton char : ${className(mine.tankClass)}.` : '';
@@ -244,7 +360,7 @@ function renderUpgrades() {
     button.disabled = !!mine?.upgradeChosen || level >= 3;
   });
   upgradeStatus.textContent = mine?.upgradeChosen
-    ? 'Amélioration choisie. Prochaine manche dans quelques secondes.'
+    ? (isRespawn() ? 'Amélioration choisie. La partie commence dans quelques secondes.' : 'Amélioration choisie. Prochaine manche dans quelques secondes.')
     : 'Choisis une amélioration avant la fin du compte à rebours.';
 }
 
@@ -263,19 +379,40 @@ new ResizeObserver(fitArena).observe(arenaWrap);
 // Réseau
 // =============================================================================
 
+const shotSound = kind => kind === 'rocket' ? 'rocket' : kind === 'laser' ? 'laser' : 'shoot';
+
 function onState(m) {
-  const previousVersion = state.map?.version;
-  const previousCrates = new Map((state.map?.walls || []).filter(w => w.kind === 'crate').map(w => [w.id, w]));
+  const prev = state;
+  const previousVersion = prev.map?.version;
+  const previousBreakables = new Map((prev.map?.walls || []).filter(w => w.hp != null).map(w => [w.id, w]));
+  const prevMine = (prev.tanks || []).find(t => t.id === id);
+  const prevBullets = new Map((prev.bullets || []).map(b => [b.id, b.bounces || 0]));
   state = m.state; snapshotAt = performance.now(); players = m.players; mines = m.mines || [];
+  const live = !firstSnapshot;   // au chargement de la page, on ignore ce qui s'est passé avant
   for (const e of state.explosions || []) {
     if (e.seq <= seenFxSeq) continue;
     seenFxSeq = e.seq;
-    if (!firstSnapshot) explosionAnims.push({ x: e.x, y: e.y, r: e.r, age: 0 });
+    if (!live) continue;
+    explosionAnims.push({ ...e, age: 0 });
+    if (e.kind === 'blink') sfx('teleport'); else { sfx('explosion'); shake = Math.max(shake, 0.18); }
   }
   for (const e of state.pickups || []) {
     if (e.seq <= seenPickupSeq) continue;
     seenPickupSeq = e.seq;
-    if (!firstSnapshot) pickupAnims.push({ x: e.x, y: e.y, type: e.type, mine: e.id === id, age: 0 });
+    if (live) { pickupAnims.push({ x: e.x, y: e.y, type: e.type, mine: e.id === id, age: 0 }); sfx('pickup', e.id === id ? 1 : 0.35); }
+  }
+  for (const e of state.notices || []) {
+    if (e.seq <= seenNoticeSeq) continue;
+    seenNoticeSeq = e.seq;
+    if (live) { noticeAnims.push({ text: e.text, color: e.color, age: 0 }); sfx('notice'); }
+  }
+  if (live) {
+    for (const b of state.bullets || []) {
+      if (!prevBullets.has(b.id)) sfx(shotSound(b.kind), b.owner === id ? 1 : 0.35);
+      else if ((b.bounces || 0) > prevBullets.get(b.id)) sfx('bounce', 0.6);
+    }
+    const mineNow = state.tanks.find(t => t.id === id);
+    if (prevMine && mineNow && mineNow.hp < prevMine.hp) { shake = 0.35; hurtFlash = 0.55; sfx('hit'); }
   }
   if (state.map) {
     const sizeChanged = worldW !== state.map.w || worldH !== state.map.h;
@@ -283,10 +420,11 @@ function onState(m) {
     if (c.width !== worldW) c.width = worldW;
     if (c.height !== worldH) c.height = worldH;
     if (sizeChanged) fitArena();
-    // Une caisse a disparu sur la même carte : elle vient d'être détruite.
-    if (previousVersion === state.map.version && state.mode === 'game') {
+    if (previousVersion !== state.map.version) { tracks = []; wrecks = []; }
+    // Une caisse ou une ruine a disparu sur la même carte : elle vient d'être détruite.
+    else if (state.mode === 'game') {
       const present = new Set(walls.map(w => w.id));
-      for (const [crateId, crate] of previousCrates) if (!present.has(crateId)) spawnDebris(crate);
+      for (const [wallId, wall] of previousBreakables) if (!present.has(wallId)) { spawnDebris(wall); sfx('explosion', 0.4); }
     }
   }
   ingestKillEvents();
@@ -312,10 +450,13 @@ function connect() {
       id = m.id;
       if (m.classes) { CLASSES = m.classes; buildClassPicker(); }
       if (m.maps) populateMaps(m.maps);
+      if (m.palette) PALETTE = m.palette;
+      if (m.addresses) ADDRESSES = m.addresses;
+      lobbySignature = '';
       send({ type: 'name', name: nameEl.value || 'Joueur' });
-      let savedClass = null;
-      try { savedClass = localStorage.getItem('tankClass'); } catch (_) {}
+      const savedClass = pref('tankClass', null), savedColor = pref('tankColor', null);
       if (savedClass && CLASSES[savedClass]) send({ type: 'tank_class', tankClass: savedClass });
+      if (savedColor && PALETTE.includes(savedColor)) send({ type: 'style', color: savedColor });
     }
     if (m.type === 'state') onState(m);
   };
@@ -341,7 +482,7 @@ function openBotModal(team) {
   pendingBotTeam = team; botModal.hidden = false;
   $('.modal-kicker').textContent = team === 'player' ? 'NOUVEL ADVERSAIRE' : 'NOUVEAU COÉQUIPIER';
   $('#botModalDescription').textContent = team === 'player'
-    ? 'Le bot rejoindra la battle royale (chacun pour soi).'
+    ? 'Le bot jouera chacun pour soi.'
     : `Le bot sera ajouté à l'équipe ${TEAM_NAME[team] || ''}.`;
   requestAnimationFrame(() => botModal.classList.add('visible'));
   $('[data-bot-level="normal"]')?.focus();
@@ -367,32 +508,49 @@ botModal.addEventListener('click', event => { if (event.target === botModal) clo
 addEventListener('keydown', event => { if (event.key === 'Escape' && !botModal.hidden) closeBotPicker(); });
 
 // =============================================================================
-// Clavier
+// Clavier et souris
 // =============================================================================
 
 const KEY_ALIASES = { arrowup: 'z', arrowdown: 's', arrowleft: 'q', arrowright: 'd', w: 'z', a: 'q' };
-const controlKeys = new Set(['z', 'q', 's', 'd', ' ', 'e']);
+const controlKeys = new Set(['z', 'q', 's', 'd', ' ', 'e', 'f']);
 function key(e) { const k = (e.key || '').toLowerCase(); return KEY_ALIASES[k] || k; }
 function typingInField(e) { const t = e.target; return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT'); }
 
+let previous = '', minePressed = false, tpPressed = false;
 addEventListener('keydown', e => {
   if (e.key === 'Tab' && !game.hidden) { e.preventDefault(); tabHeld = true; renderScores(); return; }
   if (typingInField(e)) return; // permet d'écrire Z, Q, S, D ou espace dans le pseudo
   const k = key(e);
   if (controlKeys.has(k)) { keys[k] = true; e.preventDefault(); }
-  if (k === 'e' && !e.repeat) minePressed = true; // mémorisé : même un appui très bref pose la mine
+  // Mémorisés : même un appui très bref pose la mine / déclenche le téléport.
+  if (k === 'e' && !e.repeat) minePressed = true;
+  if (k === 'f' && !e.repeat) tpPressed = true;
 }, { capture: true });
 addEventListener('keyup', e => {
   if (e.key === 'Tab') { tabHeld = false; renderScores(); if (!game.hidden) e.preventDefault(); return; }
   const k = key(e);
   if (controlKeys.has(k)) { keys[k] = false; e.preventDefault(); }
 }, { capture: true });
-addEventListener('blur', () => { keys = {}; tabHeld = false; renderScores(); });
+addEventListener('blur', () => { keys = {}; mouseDown = false; tabHeld = false; renderScores(); });
 
-let previous = '', minePressed = false;
+// Visée à la souris (option) : la tourelle suit le curseur, clic gauche pour tirer.
+let mouseWorld = null, mouseDown = false;
+c.addEventListener('mousemove', e => {
+  const r = c.getBoundingClientRect(), border = (r.width - c.clientWidth) / 2;
+  mouseWorld = { x: (e.clientX - r.left - border) * worldW / c.clientWidth, y: (e.clientY - r.top - border) * worldH / c.clientHeight };
+});
+c.addEventListener('mousedown', e => { if (mouseAim && e.button === 0) { mouseDown = true; e.preventDefault(); c.focus(); } });
+addEventListener('mouseup', () => { mouseDown = false; });
+c.addEventListener('contextmenu', e => { if (mouseAim) e.preventDefault(); });
+
 setInterval(() => {
-  const input = { f: !!keys.z, b: !!keys.s, l: !!keys.q, r: !!keys.d, shoot: !!keys[' '], mine: !!keys.e || minePressed }, encoded = JSON.stringify(input);
-  if (encoded !== previous || Object.values(input).some(Boolean)) { send({ type: 'input', input }); previous = encoded; minePressed = false; }
+  const input = { f: !!keys.z, b: !!keys.s, l: !!keys.q, r: !!keys.d, shoot: !!keys[' '] || (mouseAim && mouseDown), mine: !!keys.e || minePressed, tp: !!keys.f || tpPressed };
+  if (mouseAim && mouseWorld) {
+    const t = state.tanks.find(tk => tk.id === id);
+    if (t) input.aim = Math.round(Math.atan2(mouseWorld.y - t.y, mouseWorld.x - t.x) * 100) / 100;
+  }
+  const encoded = JSON.stringify(input), active = input.f || input.b || input.l || input.r || input.shoot || input.mine || input.tp;
+  if (encoded !== previous || active) { send({ type: 'input', input }); previous = encoded; minePressed = false; tpPressed = false; }
 }, 16);
 
 // =============================================================================
@@ -473,6 +631,7 @@ function drawCrate(w) {
 
 function drawWall(w) {
   if (w.kind === 'crate') return drawCrate(w);
+  if (w.kind === 'ruin') return drawRuin(w);
   const t = theme || {}, style = t.style || 'carton', fill = t.wall || '#7b5b3c', edge = t.edge || '#a9855e';
   x.save();
   if (style === 'tree') {
@@ -524,9 +683,10 @@ function shade(hex, amount) {
   return `rgb(${ch(n >> 16)},${ch((n >> 8) & 255)},${ch(n & 255)})`;
 }
 
-// Dessine un char centré sur l'origine, canon vers +x.
-function drawTankShape(g, cls, color) {
-  const P = SHAPES[cls] || SHAPES.light;
+// Dessine un char centré sur l'origine, canon vers +x. La tourelle peut tourner (turret, en radians)
+// et prendre une autre couleur que la caisse (accent = couleur choisie par le joueur).
+function drawTankShape(g, cls, color, turret = 0, accent = null) {
+  const P = SHAPES[cls] || SHAPES.light, top = accent || color;
   g.fillStyle = '#2a302b';
   roundRect(g, -P.L / 2 - 2, -P.W / 2 - P.t, P.L + 4, P.t, 3); g.fill();
   roundRect(g, -P.L / 2 - 2, P.W / 2, P.L + 4, P.t, 3); g.fill();
@@ -537,13 +697,15 @@ function drawTankShape(g, cls, color) {
   g.fillStyle = color; roundRect(g, -P.L / 2, -P.W / 2, P.L, P.W, 4); g.fill();
   g.strokeStyle = 'rgba(0,0,0,.28)'; g.lineWidth = 1.5; g.stroke();
   if (cls === 'heavy') { g.fillStyle = shade(color, -35); g.fillRect(-P.L / 2 + 3, -P.W / 2 + 3, 6, P.W - 6); }
-  g.fillStyle = shade(color, -45);
+  g.save(); g.rotate(turret);
+  g.fillStyle = shade(top, -45);
   g.fillRect(0, -P.bw / 2, P.bl, P.bw);
   if (cls === 'heavy') g.fillRect(P.bl - 5, -P.bw / 2 - 2, 6, P.bw + 4);
   if (cls === 'sniper') g.fillRect(P.bl - 3, -P.bw / 2 - 1, 4, P.bw + 2);
-  g.fillStyle = color; g.beginPath(); g.arc(0, 0, P.tr, 0, 7); g.fill();
+  g.fillStyle = top; g.beginPath(); g.arc(0, 0, P.tr, 0, 7); g.fill();
   g.strokeStyle = 'rgba(0,0,0,.3)'; g.stroke();
   if (cls === 'sniper') { g.fillStyle = '#1d2420'; g.fillRect(-3, -P.tr - 3, 10, 4); g.fillStyle = '#7dd3fc'; g.fillRect(5, -P.tr - 2.5, 2, 3); }
+  g.restore();
 }
 
 // Laser de visée du sniper (uniquement sur son propre char) : trajectoire + premier ricochet.
@@ -555,7 +717,7 @@ function traceRay(px, py, dx, dy, maxLen) {
     if (ny < 0 || ny > worldH) return { x: px, y: py, dx, dy: -dy, len };
     const w = walls.find(w => nx > w.x && nx < w.x + w.w && ny > w.y && ny < w.y + w.h);
     if (w) {
-      if (w.kind === 'crate') return { x: px, y: py, dx: 0, dy: 0, len, stop: true };
+      if (w.hp != null) return { x: px, y: py, dx: 0, dy: 0, len, stop: true };
       const insideX = px > w.x && px < w.x + w.w;
       return insideX ? { x: px, y: py, dx, dy: -dy, len } : { x: px, y: py, dx: -dx, dy, len };
     }
@@ -564,7 +726,7 @@ function traceRay(px, py, dx, dy, maxLen) {
   return { x: px, y: py, dx: 0, dy: 0, len, stop: true };
 }
 function drawAimLine(t) {
-  const P = SHAPES.sniper, dx = Math.cos(t.a), dy = Math.sin(t.a);
+  const P = SHAPES.sniper, angle = t.ta ?? t.a, dx = Math.cos(angle), dy = Math.sin(angle);
   const sx = t.x + dx * P.bl, sy = t.y + dy * P.bl;
   const first = traceRay(sx, sy, dx, dy, 1400);
   x.save(); x.setLineDash([6, 6]); x.lineWidth = 1.5;
@@ -579,7 +741,10 @@ function drawAimLine(t) {
 function playerName(tankId) { return players.find(p => p.id === tankId)?.name || ''; }
 
 function drawTank(t) {
-  const r = t.r || 17;
+  if (hiddenEnemy(t)) return;   // invisible pour l'ennemi
+  const r = t.r || 17, now = performance.now();
+  x.save();
+  if (t.invis > 0) x.globalAlpha = 0.4 + Math.sin(now / 120) * 0.08;
   const pulse = killAnimations.find(a => a.id === t.id && a.age < .55);
   if (pulse) {
     const strength = 1 - pulse.age / .55;
@@ -589,10 +754,15 @@ function drawTank(t) {
   if (t.shield > 0) {
     x.save(); x.strokeStyle = '#a78bfa'; x.shadowColor = '#a78bfa'; x.shadowBlur = 16; x.lineWidth = 4;
     x.beginPath(); x.arc(t.x, t.y, r + 11, 0, 7); x.stroke(); x.restore();
+  } else if (t.spawnShield > 0) {
+    x.save(); x.strokeStyle = '#ffffff'; x.globalAlpha *= 0.6; x.lineWidth = 2; x.setLineDash([4, 4]); x.lineDashOffset = now / 30;
+    x.beginPath(); x.arc(t.x, t.y, r + 8, 0, 7); x.stroke(); x.restore();
   }
   if (t.id === id && t.cls === 'sniper') drawAimLine(t);
-  drawTankBonusFx(t, performance.now());
-  x.save(); x.translate(t.x, t.y); x.rotate(t.a); drawTankShape(x, t.cls, t.color); x.restore();
+  drawTankBonusFx(t, now);
+  x.save(); x.translate(t.x, t.y); x.rotate(t.a);
+  drawTankShape(x, t.cls, t.color, (t.ta ?? t.a) - t.a, t.accent && t.accent !== t.color ? t.accent : null);
+  x.restore();
   drawTankBonusIcons(t);
 
   // Barre de vie (une case par point de vie)
@@ -614,6 +784,7 @@ function drawTank(t) {
     x.fillStyle = mine ? '#ffffff' : t.color; x.fillText(label, t.x, barY - 3);
     x.restore();
   }
+  x.restore();
 }
 
 // Les emojis passent par une police emoji explicite (sinon carré vide sur certains PC).
@@ -680,6 +851,9 @@ function activeBonuses(t) {
   if (t.rockets > 0) list.push([POWER_INFO.rocket, `Roquette ×${t.rockets}`, null, 0]);
   if (t.bouncy > 0) list.push([POWER_INFO.bouncy, `Rebond ×${t.bouncy}`, null, 0]);
   if (t.mines > 0) list.push([POWER_INFO.mine, `Mines ×${t.mines} (E)`, null, 0]);
+  timed(t.invis, 'invis', 5); timed(t.magnet, 'magnet', 8);
+  if (t.lasers > 0) list.push([POWER_INFO.laser, `Laser ×${t.lasers}`, null, 0]);
+  if (t.teleports > 0) list.push([POWER_INFO.teleport, `Téléport ×${t.teleports} (F)`, null, 0]);
   return list;
 }
 
@@ -700,6 +874,7 @@ function drawTankBonusFx(t, now) {
   if (t.rapidFire > 0) auras.push(POWER_INFO.rapid.color);
   if (t.homing > 0) auras.push(POWER_INFO.homing.color);
   if (t.spread > 0) auras.push(POWER_INFO.spread.color);
+  if (t.magnet > 0) auras.push(POWER_INFO.magnet.color);
   auras.forEach((color, i) => {
     x.save(); x.strokeStyle = color; x.lineWidth = 2.5; x.globalAlpha = 0.85; x.shadowColor = color; x.shadowBlur = 10;
     x.setLineDash([6, 8]); x.lineDashOffset = (i % 2 ? 1 : -1) * now / 25;
@@ -743,11 +918,17 @@ function drawExplosions(dt) {
     e.age += dt;
     const p = Math.min(1, e.age / 0.6);
     x.save();
-    const g = x.createRadialGradient(e.x, e.y, 0, e.x, e.y, e.r * (0.5 + p * 0.6));
-    g.addColorStop(0, `rgba(255,240,180,${0.9 * (1 - p)})`); g.addColorStop(0.45, `rgba(251,146,60,${0.75 * (1 - p)})`); g.addColorStop(1, 'rgba(239,68,68,0)');
-    x.fillStyle = g; x.beginPath(); x.arc(e.x, e.y, e.r * (0.5 + p * 0.6), 0, 7); x.fill();
-    x.strokeStyle = `rgba(255,200,120,${1 - p})`; x.lineWidth = 4 * (1 - p) + 1;
-    x.beginPath(); x.arc(e.x, e.y, e.r * p, 0, 7); x.stroke();
+    if (e.kind === 'blink') {
+      x.strokeStyle = `rgba(56,189,248,${1 - p})`; x.lineWidth = 3 * (1 - p) + 1;
+      for (const [px, py] of [[e.x, e.y], [e.x2, e.y2]]) { x.beginPath(); x.arc(px, py, 10 + p * 26, 0, 7); x.stroke(); }
+      x.setLineDash([4, 6]); x.globalAlpha = 0.6 * (1 - p); x.beginPath(); x.moveTo(e.x, e.y); x.lineTo(e.x2, e.y2); x.stroke();
+    } else {
+      const g = x.createRadialGradient(e.x, e.y, 0, e.x, e.y, e.r * (0.5 + p * 0.6));
+      g.addColorStop(0, `rgba(255,240,180,${0.9 * (1 - p)})`); g.addColorStop(0.45, `rgba(251,146,60,${0.75 * (1 - p)})`); g.addColorStop(1, 'rgba(239,68,68,0)');
+      x.fillStyle = g; x.beginPath(); x.arc(e.x, e.y, e.r * (0.5 + p * 0.6), 0, 7); x.fill();
+      x.strokeStyle = `rgba(255,200,120,${1 - p})`; x.lineWidth = 4 * (1 - p) + 1;
+      x.beginPath(); x.arc(e.x, e.y, e.r * p, 0, 7); x.stroke();
+    }
     x.restore();
   }
   explosionAnims = explosionAnims.filter(e => e.age < 0.6);
@@ -764,14 +945,26 @@ function drawZone(now) {
   x.restore();
 }
 
+// Grand texte au centre de l'arène (taille constante à l'écran).
+function bigText(text, color, k, y = worldH / 2) {
+  x.save(); x.font = `900 ${Math.round(28 * k)}px system-ui, ${ICON_FONT}`; x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.lineWidth = 7 * k; x.lineJoin = 'round'; x.strokeStyle = '#000c'; x.strokeText(text, worldW / 2, y);
+  x.fillStyle = color; x.fillText(text, worldW / 2, y); x.restore();
+}
+
 // Badges des bonus actifs de ton char, en haut à gauche (taille constante à l'écran).
 function drawHud(now) {
+  const k = screenScale(), mine = me();
+  const pending = (state.respawns || []).find(r => r.id === id);
+  if (pending) bigText(`Réapparition dans ${Math.max(1, Math.ceil(pending.t))} s`, '#ffffff', k);
+  else if (mode() === 'elim' && state.phase === 'round' && state.running && isFighter(mine) && (mine.lives || 0) <= 0) bigText('💀 Éliminé ! Regarde la fin de la partie', '#fca5a5', k);
   const t = state.tanks.find(tk => tk.id === id);
   if (!t) return;
-  const k = screenScale(), h = 28 * k, pad = 10 * k;
+  const h = 28 * k, pad = 10 * k, chips = activeBonuses(t);
+  if (Object.values(state.flags || {}).some(f => f.carrier === id)) chips.unshift([{ icon: '🚩', color: '#ffffff' }, 'Drapeau volé : rentre à ta base !', null, 0]);
   x.save(); x.font = `800 ${Math.round(13 * k)}px system-ui, ${ICON_FONT}`; x.textBaseline = 'middle'; x.textAlign = 'left';
   let px = 12 * k, py = 12 * k;
-  for (const [info, label, left, max] of activeBonuses(t)) {
+  for (const [info, label, left, max] of chips) {
     const text = `${info.icon} ${label}`, w = x.measureText(text).width + pad * 2;
     if (px + w > worldW - 12 * k) { px = 12 * k; py += h + 6 * k; }
     roundRect(x, px, py, w, h, h / 2); x.fillStyle = 'rgba(8,12,9,.8)'; x.fill();
@@ -782,13 +975,18 @@ function drawHud(now) {
     x.fillStyle = '#fff'; x.fillText(text, px + pad, py + h / 2 + 1);
     px += w + 6 * k;
   }
-  if (t.outside) {
-    x.fillStyle = `rgba(220,38,38,${0.18 + Math.sin(now / 120) * 0.08})`; x.fillRect(0, 0, worldW, worldH);
-    x.font = `900 ${Math.round(26 * k)}px system-ui`; x.textAlign = 'center'; x.lineWidth = 6 * k; x.lineJoin = 'round'; x.strokeStyle = '#000a';
-    const ty = py + h + 40 * k;
-    x.strokeText('⚠ HORS DE LA ZONE ⚠', worldW / 2, ty); x.fillStyle = '#fecaca'; x.fillText('⚠ HORS DE LA ZONE ⚠', worldW / 2, ty);
-  }
   x.restore();
+  if (t.outside && state.zone) {
+    x.save();
+    x.fillStyle = `rgba(220,38,38,${0.18 + Math.sin(now / 120) * 0.08})`; x.fillRect(0, 0, worldW, worldH);
+    bigText('⚠ HORS DE LA ZONE ⚠', '#fecaca', k * 0.95, py + h + 40 * k);
+    // Flèche vers le centre de la zone
+    const z = state.zone, a = Math.atan2(z.y - t.y, z.x - t.x), d = (t.r || 17) + 30 + Math.sin(now / 150) * 4;
+    x.translate(t.x + Math.cos(a) * d, t.y + Math.sin(a) * d); x.rotate(a); x.scale(k, k);
+    x.fillStyle = '#fecaca'; x.strokeStyle = '#7f1d1d'; x.lineWidth = 2;
+    x.beginPath(); x.moveTo(14, 0); x.lineTo(-7, -10); x.lineTo(-2, 0); x.lineTo(-7, 10); x.closePath(); x.fill(); x.stroke();
+    x.restore();
+  }
 }
 
 function drawBullet(b) {
@@ -802,6 +1000,15 @@ function drawBullet(b) {
     x.fillStyle = '#dc2626'; roundRect(x, -9, -4.5, 18, 9, 3); x.fill();
     x.fillStyle = '#f5f5f5'; x.beginPath(); x.moveTo(9, -4.5); x.lineTo(15, 0); x.lineTo(9, 4.5); x.fill();
     x.fillStyle = b.color; x.fillRect(-9, -6.5, 5, 13);
+    x.restore(); return;
+  }
+  if (kind === 'laser') {
+    const line = (len, width, color, blur) => {
+      x.strokeStyle = color; x.lineWidth = width; x.shadowColor = color; x.shadowBlur = blur;
+      x.beginPath(); x.moveTo(b.x - dx * len, b.y - dy * len); x.lineTo(b.x, b.y); x.stroke();
+    };
+    x.save(); x.lineCap = 'round';
+    line(70, 9, 'rgba(244,63,94,.35)', 0); line(70, 4, '#f43f5e', 16); line(55, 1.5, '#ffffff', 0);
     x.restore(); return;
   }
   const color = kind === 'homing' ? '#f472b6' : kind === 'bouncy' ? '#e879f9' : (b.color || '#fff');
@@ -818,17 +1025,18 @@ function drawBullet(b) {
   x.restore();
 }
 
-function spawnDebris(crate) {
-  for (let i = 0; i < 14; i++) {
+function spawnDebris(wall) {
+  const ruin = wall.kind === 'ruin', color = ruin ? (theme?.wall || '#7b5b3c') : '#a8743f';
+  for (let i = 0; i < (ruin ? 22 : 14); i++) {
     const a = Math.random() * Math.PI * 2, v = 60 + Math.random() * 160;
-    debris.push({ x: crate.x + crate.w / 2, y: crate.y + crate.h / 2, vx: Math.cos(a) * v, vy: Math.sin(a) * v, rot: Math.random() * 6, vr: (Math.random() - .5) * 12, size: 4 + Math.random() * 6, age: 0 });
+    debris.push({ x: wall.x + wall.w / 2, y: wall.y + wall.h / 2, vx: Math.cos(a) * v, vy: Math.sin(a) * v, rot: Math.random() * 6, vr: (Math.random() - .5) * 12, size: 4 + Math.random() * 6, color, age: 0 });
   }
 }
 function drawDebris(dt) {
   for (const d of debris) {
     d.age += dt; d.x += d.vx * dt; d.y += d.vy * dt; d.vx *= 0.92; d.vy *= 0.92; d.rot += d.vr * dt;
     x.save(); x.globalAlpha = Math.max(0, 1 - d.age / 0.9); x.translate(d.x, d.y); x.rotate(d.rot);
-    x.fillStyle = '#a8743f'; x.fillRect(-d.size / 2, -d.size / 4, d.size, d.size / 2); x.restore();
+    x.fillStyle = d.color || '#a8743f'; x.fillRect(-d.size / 2, -d.size / 4, d.size, d.size / 2); x.restore();
   }
   debris = debris.filter(d => d.age < 0.9);
 }
@@ -842,8 +1050,9 @@ function smoothTanks(dt) {
     if (!v) { v = { ...t }; visualTanks.set(t.id, v); }
     const alpha = 1 - Math.exp(-dt * (t.id === id ? 22 : 14));
     v.x += (t.x - v.x) * alpha; v.y += (t.y - v.y) * alpha; v.a = lerpAngle(v.a, t.a, alpha);
-    const { x: sx, y: sy, a: sa } = v;
-    Object.assign(v, t, { x: sx, y: sy, a: sa }); // toutes les infos (dont les bonus), position lissée
+    v.ta = lerpAngle(v.ta ?? t.ta ?? t.a, t.ta ?? t.a, Math.min(1, alpha * 1.5));
+    const { x: sx, y: sy, a: sa, ta: sta } = v;
+    Object.assign(v, t, { x: sx, y: sy, a: sa, ta: sta }); // toutes les infos (dont les bonus), position lissée
   }
   for (const k of visualTanks.keys()) if (!present.has(k)) visualTanks.delete(k);
   return [...visualTanks.values()];
@@ -862,6 +1071,11 @@ function ingestKillEvents() {
     if (event.seq <= seenKillSeq) continue;
     seenKillSeq = event.seq;
     if (!event.noKill) killAnimations.push({ id: event.id, kills: event.kills, x: event.x, y: event.y, color: event.color, age: 0 });
+    if (event.wx != null) {
+      wrecks.push({ x: event.wx, y: event.wy, cls: event.wcls, rot: Math.random() * 6.28, turret: Math.random() - 0.5, age: 0 });
+      if (wrecks.length > 40) wrecks.shift();
+    }
+    sfx('death', event.victimId === id ? 1 : 0.6);
     if (event.victimId === id) triggerScreamer(); // seulement chez le joueur mort
   }
 }
@@ -878,59 +1092,102 @@ function drawKillAnimations(dt) {
   killAnimations = killAnimations.filter(a => a.age < 1.25);
 }
 
-function renderWins(elementId, wins, team, max = 5) {
+function renderWins(elementId, wins, team, max = 5, icon = '⚔') {
   const el = document.getElementById(elementId);
-  const value = Math.max(0, Math.min(max, wins)), signature = `${team}-${value}-${max}`;
+  const value = Math.max(0, Math.min(max, wins)), signature = `${team}-${value}-${max}-${icon}`;
   if (el.dataset.signature === signature) return;
   el.dataset.signature = signature;
-  el.innerHTML = Array.from({ length: max }, (_, i) => `<span class="win-icon ${i < value ? 'won' : ''} ${i === value - 1 ? 'latest' : ''}" aria-hidden="true">⚔</span>`).join('');
+  el.innerHTML = Array.from({ length: max }, (_, i) => `<span class="win-icon ${i < value ? 'won' : ''} ${i === value - 1 ? 'latest' : ''}" aria-hidden="true">${icon}</span>`).join('');
+}
+
+// Barre de progression (roi de la colline).
+function renderBar(elementId, value, max, color) {
+  const el = document.getElementById(elementId);
+  const v = Math.max(0, Math.min(max, value)), signature = `bar-${v}-${max}-${color}`;
+  if (el.dataset.signature === signature) return;
+  el.dataset.signature = signature;
+  el.innerHTML = `<div class="hill-bar"><span style="width:${(100 * v / max).toFixed(1)}%;background:${color}"></span><em>${v} / ${max} s</em></div>`;
 }
 
 function updateTopScore() {
-  if (!isBR()) {
+  const s = settings(), m = mode();
+  if (!isFFA()) {
     leftLabel.textContent = 'Équipe jaune'; rightLabel.textContent = 'Équipe bleue';
-    renderWins('yellowWins', state.score[0] || 0, 'yellow');
-    renderWins('blueWins', state.score[1] || 0, 'blue');
+    if (m === 'koth') {
+      renderBar('yellowWins', state.score[0] || 0, s.kothTime, '#ffd24d');
+      renderBar('blueWins', state.score[1] || 0, s.kothTime, '#75d8ff');
+    } else {
+      const max = m === 'ctf' ? s.ctfCaps : s.teamsWins, icon = m === 'ctf' ? '🚩' : '⚔';
+      renderWins('yellowWins', state.score[0] || 0, 'yellow', max, icon);
+      renderWins('blueWins', state.score[1] || 0, 'blue', max, icon);
+    }
     return;
   }
-  const mine = me();
-  const fighters = players.filter(isFighter);
-  const leader = fighters.sort((a, b) => (b.brWins || 0) - (a.brWins || 0) || (b.kills || 0) - (a.kills || 0))[0];
-  leftLabel.textContent = mine && fighters.includes(mine) ? 'Tes manches' : 'Spectateur';
+  const mine = me(), elim = m === 'elim';
+  const fighters = players.filter(isFighter), main = p => elim ? (p.lives || 0) : (p.brWins || 0);
+  const leader = fighters.sort((a, b) => main(b) - main(a) || (b.kills || 0) - (a.kills || 0))[0];
+  leftLabel.textContent = mine && fighters.includes(mine) ? (elim ? 'Tes vies' : 'Tes manches') : 'Spectateur';
   rightLabel.textContent = leader ? `Meneur : ${leader.name}` : 'Meneur';
-  renderWins('yellowWins', mine?.brWins || 0, 'br-me', BR_WINS);
-  renderWins('blueWins', leader?.brWins || 0, 'br-lead', BR_WINS);
+  const max = elim ? s.elimLives : s.brWins, icon = elim ? '♥' : '⚔';
+  renderWins('yellowWins', mine ? main(mine) : 0, `${m}-me`, max, icon);
+  renderWins('blueWins', leader ? main(leader) : 0, `${m}-lead`, max, icon);
+}
+
+function statusLine() {
+  const s = settings(), ice = state.map?.ice ? ' · ❄ Sol glissant !' : '';
+  if (state.phase === 'prep') return isRespawn() ? `La partie commence dans ${Math.max(0, Math.ceil(state.prepTimer || 0))} s` : `Prochaine manche dans ${Math.max(0, Math.ceil(state.prepTimer || 0))} s`;
+  const win = players.find(p => p.id === state.winner)?.name;
+  if (!state.running) {
+    if (state.winnerTeam) return `L'équipe ${TEAM_NAME[state.winnerTeam]} gagne la partie ! Retour au lobby...`;
+    return win ? `${win} gagne la partie ! Retour au lobby...` : 'Partie terminée ! Retour au lobby...';
+  }
+  if (win) return `${win} gagne la manche`;
+  if (isBR() && state.zone) {
+    const z = state.zone;
+    const zoneText = z.t < z.delay ? `zone dans ${Math.ceil(z.delay - z.t)} s` : z.r > z.endR + 1 ? 'la zone rétrécit !' : 'zone finale';
+    return `👑 ${state.tanks.length} en vie · ${zoneText}${ice}`;
+  }
+  if (mode() === 'koth') return `⛰ Colline : jaune ${state.score[0] || 0} s · bleue ${state.score[1] || 0} s (objectif ${s.kothTime} s)${ice}`;
+  if (mode() === 'ctf') return `🚩 Captures : jaune ${state.score[0] || 0} – ${state.score[1] || 0} bleue (objectif ${s.ctfCaps})${ice}`;
+  if (mode() === 'elim') return `💀 ${players.filter(p => isFighter(p) && (p.lives || 0) > 0).length} joueurs encore en lice${ice}`;
+  return `Ramasse les bonus · E mine · F téléport${ice}`;
 }
 
 function draw(now = performance.now()) {
   const dt = Math.min((now - lastFrame) / 1000, .05);
   lastFrame = now;
   if (!game.hidden) {
+    x.save();
+    if (shake > 0) { const m = shake * 18; x.translate((Math.random() - .5) * m, (Math.random() - .5) * m); shake = Math.max(0, shake - dt); }
     x.drawImage(getFloor(), 0, 0);
+    drawTracks(dt);
+    drawWrecks(dt);
+    drawTeleporters(now);
+    drawHill(now);
     for (const w of walls) drawWall(w);
+    drawFlagBases();
     for (const m of mines) drawMine(m, now);
     for (const p of state.powerups || []) drawPowerup(p, now);
-    smoothTanks(dt).forEach(drawTank);
+    const tanks = smoothTanks(dt);
+    updateTracks(tanks.filter(t => !hiddenEnemy(t)));
+    tanks.forEach(drawTank);
+    drawFlags(now);
     extrapolatedBullets().forEach(drawBullet);
     drawExplosions(dt);
     drawZone(now);
     drawPickups(dt);
     drawDebris(dt);
     drawKillAnimations(dt);
+    x.restore();
     drawHud(now);
-    updateTopScore();
-    const win = players.find(p => p.id === state.winner)?.name;
-    const ice = state.map?.ice ? ' · ❄ Sol glissant !' : '';
-    let info = `Ramasse les bonus · E pour poser une mine${ice}`;
-    if (isBR() && state.zone) {
-      const z = state.zone;
-      const zoneText = z.t < z.delay ? `zone dans ${Math.ceil(z.delay - z.t)} s` : z.r > z.endR + 1 ? 'la zone rétrécit !' : 'zone finale';
-      info = `👑 ${state.tanks.length} en vie · ${zoneText}${ice}`;
+    drawNotices(dt);
+    if (hurtFlash > 0) {
+      const g = x.createRadialGradient(worldW / 2, worldH / 2, Math.min(worldW, worldH) * 0.25, worldW / 2, worldH / 2, Math.max(worldW, worldH) * 0.7);
+      g.addColorStop(0, 'rgba(220,38,38,0)'); g.addColorStop(1, `rgba(220,38,38,${Math.min(0.6, hurtFlash)})`);
+      x.fillStyle = g; x.fillRect(0, 0, worldW, worldH); hurtFlash = Math.max(0, hurtFlash - dt * 1.6);
     }
-    $('#message').textContent = state.phase === 'prep'
-      ? `Prochaine manche dans ${Math.max(0, Math.ceil(state.prepTimer || 0))} s`
-      : win ? `${win} gagne${state.running ? ' la manche' : ' la partie ! Retour au lobby...'}`
-      : info;
+    updateTopScore();
+    $('#message').textContent = statusLine();
   }
   requestAnimationFrame(draw);
 }
@@ -1054,6 +1311,207 @@ function triggerScreamer() {
   playScream();
   screamerTimer = setTimeout(() => { screamerEl.hidden = true; screamerEl.classList.remove('play'); }, 1400);
 }
+
+// =============================================================================
+// Éléments de jeu : ruines, téléporteurs, colline, drapeaux, traces, épaves, annonces
+// =============================================================================
+
+// Un char ennemi invisible n'est pas dessiné (les spectateurs voient tout).
+function hiddenEnemy(t) {
+  if (!(t.invis > 0) || t.id === id) return false;
+  const mine = me();
+  if (!isFighter(mine)) return false;
+  if (isFFA()) return true;
+  const myColor = state.tanks.find(tk => tk.id === id)?.color || TEAM_COLOR[mine.team];
+  return t.color !== myColor;
+}
+
+// Mur en ruine : se fissure puis s'effondre sous les tirs.
+function drawRuin(w) {
+  drawWall({ ...w, kind: 'wall' });
+  const ratio = Math.max(0, (w.hp ?? 6) / (w.maxHp || 6)), rnd = seeded(w.id * 53 + 11);
+  x.save(); x.beginPath(); x.rect(w.x, w.y, w.w, w.h); x.clip();
+  x.fillStyle = `rgba(0,0,0,${0.1 + (1 - ratio) * 0.35})`; x.fillRect(w.x, w.y, w.w, w.h);
+  x.strokeStyle = '#140d08'; x.lineWidth = 1.5;
+  for (let i = 0; i < 2 + Math.round((1 - ratio) * 6); i++) {
+    let px = w.x + rnd() * w.w, py = w.y + rnd() * w.h; x.beginPath(); x.moveTo(px, py);
+    for (let j = 0; j < 4; j++) { px += (rnd() - 0.5) * 18; py += (rnd() - 0.5) * 18; x.lineTo(px, py); }
+    x.stroke();
+  }
+  x.restore();
+  // Coins ébréchés : on reconnaît d'un coup d'œil un mur cassable.
+  x.save(); x.fillStyle = theme?.floor || '#172119';
+  x.beginPath(); x.moveTo(w.x, w.y); x.lineTo(w.x + 9, w.y); x.lineTo(w.x, w.y + 7); x.fill();
+  x.beginPath(); x.moveTo(w.x + w.w, w.y + w.h); x.lineTo(w.x + w.w - 9, w.y + w.h); x.lineTo(w.x + w.w, w.y + w.h - 7); x.fill();
+  x.restore();
+}
+
+function drawTeleporters(now) {
+  for (const tp of state.map?.teleporters || []) for (const [px, py] of [[tp.ax, tp.ay], [tp.bx, tp.by]]) {
+    x.save(); x.translate(px, py);
+    const g = x.createRadialGradient(0, 0, 2, 0, 0, 28);
+    g.addColorStop(0, 'rgba(56,189,248,.55)'); g.addColorStop(1, 'rgba(56,189,248,0)');
+    x.fillStyle = g; x.beginPath(); x.arc(0, 0, 28, 0, 7); x.fill();
+    x.rotate(now / 400); x.strokeStyle = '#38bdf8'; x.lineWidth = 2.5;
+    for (let i = 0; i < 3; i++) { x.beginPath(); x.arc(0, 0, 8 + i * 5, i * 2, i * 2 + Math.PI * 1.2); x.stroke(); }
+    x.restore();
+  }
+}
+
+function drawHill(now) {
+  const h = state.hill;
+  if (!h) return;
+  const col = h.contested ? '#ffffff' : h.owner ? TEAM_COLOR[h.owner] : '#d8ef5a', goal = h.goal || 60;
+  x.save();
+  x.globalAlpha = h.contested ? 0.16 + Math.sin(now / 90) * 0.08 : 0.14; x.fillStyle = col;
+  x.beginPath(); x.arc(h.x, h.y, h.r, 0, 7); x.fill();
+  x.globalAlpha = 0.9; x.strokeStyle = col; x.lineWidth = 3; x.setLineDash([10, 8]); x.lineDashOffset = now / 60;
+  x.beginPath(); x.arc(h.x, h.y, h.r, 0, 7); x.stroke();
+  // Progression de chaque équipe autour de la colline : jaune à gauche, bleue à droite.
+  x.setLineDash([]); x.lineWidth = 6; x.lineCap = 'round';
+  x.strokeStyle = '#ffd24d'; x.beginPath(); x.arc(h.x, h.y, h.r + 9, -Math.PI / 2, -Math.PI / 2 - Math.PI * Math.min(1, h.time[0] / goal), true); x.stroke();
+  x.strokeStyle = '#75d8ff'; x.beginPath(); x.arc(h.x, h.y, h.r + 9, -Math.PI / 2, -Math.PI / 2 + Math.PI * Math.min(1, h.time[1] / goal)); x.stroke();
+  x.font = `900 13px system-ui, ${ICON_FONT}`; x.textAlign = 'center'; x.textBaseline = 'bottom'; x.lineWidth = 4; x.strokeStyle = '#000b';
+  const label = h.contested ? '⚔ CONTESTÉE' : h.owner ? `⛰ ÉQUIPE ${TEAM_NAME[h.owner].toUpperCase()}` : '⛰ COLLINE';
+  x.strokeText(label, h.x, h.y - h.r - 16); x.fillStyle = col; x.fillText(label, h.x, h.y - h.r - 16);
+  x.restore();
+}
+
+function drawFlagIcon(fx, fy, color, now, carried) {
+  x.save(); x.translate(fx + (carried ? 8 : 0), fy - (carried ? 12 : 0));
+  x.strokeStyle = '#e5e7eb'; x.lineWidth = 2.5; x.beginPath(); x.moveTo(0, 12); x.lineTo(0, -22); x.stroke();
+  const wave = Math.sin(now / 150) * 3;
+  x.fillStyle = color; x.beginPath(); x.moveTo(0, -22); x.quadraticCurveTo(10, -24 + wave, 20, -16); x.quadraticCurveTo(10, -10 + wave, 0, -8); x.closePath(); x.fill();
+  x.strokeStyle = '#0009'; x.lineWidth = 1; x.stroke();
+  x.restore();
+}
+
+function drawFlagBases() {
+  for (const f of Object.values(state.flags || {})) {
+    const col = TEAM_COLOR[f.team];
+    x.save(); x.strokeStyle = col; x.globalAlpha = 0.75; x.lineWidth = 2; x.setLineDash([6, 5]);
+    x.beginPath(); x.arc(f.homeX, f.homeY, 40, 0, 7); x.stroke();
+    x.setLineDash([]); x.globalAlpha = 0.1; x.fillStyle = col; x.fill();
+    x.restore();
+  }
+}
+
+function drawFlags(now) {
+  for (const f of Object.values(state.flags || {})) {
+    const col = TEAM_COLOR[f.team];
+    let fx = f.x, fy = f.y;
+    if (f.carrier) { const v = visualTanks.get(f.carrier); if (v) { fx = v.x; fy = v.y; } }
+    drawFlagIcon(fx, fy, col, now, !!f.carrier);
+    const home = Math.hypot(f.x - f.homeX, f.y - f.homeY) < 1;
+    if (!f.carrier && !home) {
+      x.save(); x.font = '800 11px system-ui'; x.textAlign = 'center'; x.lineWidth = 3; x.strokeStyle = '#000b';
+      const label = `retour ${Math.ceil(f.dropTimer)} s`;
+      x.strokeText(label, f.x, f.y + 26); x.fillStyle = col; x.fillText(label, f.x, f.y + 26); x.restore();
+    }
+  }
+}
+
+// Traces de chenilles : un repère tous les 7 px, qui s'efface en 7 s.
+function updateTracks(list) {
+  for (const v of list) {
+    const last = v.lastMark;
+    if (!last || Math.hypot(v.x - last.x, v.y - last.y) > 7) {
+      tracks.push({ x: v.x, y: v.y, a: v.a, w: (SHAPES[v.cls] || SHAPES.light).W, age: 0 });
+      v.lastMark = { x: v.x, y: v.y };
+    }
+  }
+  if (tracks.length > 900) tracks.splice(0, tracks.length - 900);
+}
+function drawTracks(dt) {
+  x.save(); x.fillStyle = '#000';
+  for (const m of tracks) {
+    m.age += dt; x.globalAlpha = Math.max(0, 0.22 * (1 - m.age / 7));
+    const ca = Math.cos(m.a), sa = Math.sin(m.a), off = m.w / 2 + 3;
+    x.fillRect(m.x - sa * off - 2, m.y + ca * off - 2, 4, 4);
+    x.fillRect(m.x + sa * off - 2, m.y - ca * off - 2, 4, 4);
+  }
+  x.restore();
+  tracks = tracks.filter(m => m.age < 7);
+}
+
+// Épaves calcinées des chars détruits (restent jusqu'à la fin de la manche).
+function drawWrecks(dt) {
+  for (const w of wrecks) {
+    w.age += dt;
+    x.save(); x.translate(w.x, w.y);
+    const g = x.createRadialGradient(0, 0, 2, 0, 0, 32);
+    g.addColorStop(0, 'rgba(0,0,0,.55)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    x.fillStyle = g; x.beginPath(); x.arc(0, 0, 32, 0, 7); x.fill();
+    x.save(); x.rotate(w.rot); x.globalAlpha = 0.75; drawTankShape(x, w.cls, '#3a3f3b', w.turret, '#2c302d'); x.restore();
+    if (w.age < 5) { // fumée
+      for (let i = 0; i < 3; i++) {
+        const rise = (w.age * 22 + i * 9) % 30;
+        x.globalAlpha = 0.28 * (1 - w.age / 5) * (1 - rise / 30); x.fillStyle = '#9ca3af';
+        x.beginPath(); x.arc(Math.sin(w.age * 2 + i) * 5, -8 - rise, 5 + rise * 0.25, 0, 7); x.fill();
+      }
+    }
+    x.restore();
+  }
+}
+
+// Annonces au centre de l'écran (drapeau volé, colline prise...).
+function drawNotices(dt) {
+  const k = screenScale(); let y = worldH * 0.2;
+  for (const n of noticeAnims) {
+    n.age += dt;
+    x.save(); x.globalAlpha = Math.max(0, Math.min(1, (2.6 - n.age) * 2));
+    x.font = `900 ${Math.round(19 * k)}px system-ui, ${ICON_FONT}`; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.lineWidth = 6 * k; x.lineJoin = 'round'; x.strokeStyle = '#000c'; x.strokeText(n.text, worldW / 2, y);
+    x.fillStyle = n.color; x.fillText(n.text, worldW / 2, y);
+    x.restore(); y += 30 * k;
+  }
+  noticeAnims = noticeAnims.filter(n => n.age < 2.6);
+}
+
+// =============================================================================
+// Sons (générés par le navigateur, aucun fichier audio)
+// =============================================================================
+
+let sfxBusNode = null;
+const sfxLast = {};
+function sfxBus() {
+  if (!sfxBusNode) { sfxBusNode = audioCtx.createGain(); sfxBusNode.gain.value = 0.6; sfxBusNode.connect(audioCtx.destination); }
+  return sfxBusNode;
+}
+function tone(t0, { type = 'square', f = 440, f2 = null, dur = 0.1, vol = 0.2 }) {
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t0); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t0 + dur);
+  g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g); g.connect(sfxBus()); o.start(t0); o.stop(t0 + dur + 0.02);
+}
+function noise(t0, { dur = 0.2, vol = 0.3, f = 1000, f2 = null, type = 'bandpass', q = 1 }) {
+  const len = Math.max(1, Math.floor(audioCtx.sampleRate * dur)), buffer = audioCtx.createBuffer(1, len, audioCtx.sampleRate), data = buffer.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  const src = audioCtx.createBufferSource(), filter = audioCtx.createBiquadFilter(), g = audioCtx.createGain();
+  src.buffer = buffer; filter.type = type; filter.frequency.setValueAtTime(f, t0); if (f2) filter.frequency.exponentialRampToValueAtTime(f2, t0 + dur); filter.Q.value = q;
+  g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  src.connect(filter); filter.connect(g); g.connect(sfxBus()); src.start(t0); src.stop(t0 + dur);
+}
+const SOUNDS = {
+  shoot:     (t, v) => { tone(t, { f: 420, f2: 120, dur: 0.09, vol: 0.09 * v }); noise(t, { dur: 0.06, vol: 0.12 * v, f: 2500 }); },
+  laser:     (t, v) => tone(t, { type: 'sawtooth', f: 1800, f2: 260, dur: 0.16, vol: 0.08 * v }),
+  rocket:    (t, v) => { noise(t, { dur: 0.35, vol: 0.2 * v, f: 600, f2: 200, type: 'lowpass' }); tone(t, { type: 'sawtooth', f: 160, f2: 80, dur: 0.3, vol: 0.06 * v }); },
+  bounce:    (t, v) => tone(t, { type: 'triangle', f: 1300, f2: 900, dur: 0.05, vol: 0.06 * v }),
+  explosion: (t, v) => { noise(t, { dur: 0.7, vol: 0.5 * v, f: 900, f2: 60, type: 'lowpass' }); tone(t, { type: 'sine', f: 110, f2: 35, dur: 0.5, vol: 0.3 * v }); },
+  pickup:    (t, v) => [660, 880, 1320].forEach((f, i) => tone(t + i * 0.06, { type: 'triangle', f, dur: 0.09, vol: 0.12 * v })),
+  hit:       (t, v) => { noise(t, { dur: 0.14, vol: 0.35 * v, f: 1800 }); tone(t, { f: 220, f2: 90, dur: 0.14, vol: 0.1 * v }); },
+  death:     (t, v) => { noise(t, { dur: 0.9, vol: 0.45 * v, f: 500, f2: 50, type: 'lowpass' }); tone(t, { type: 'sawtooth', f: 180, f2: 40, dur: 0.7, vol: 0.12 * v }); },
+  teleport:  (t, v) => tone(t, { type: 'sine', f: 300, f2: 1600, dur: 0.22, vol: 0.15 * v }),
+  notice:    (t, v) => [523, 659, 784].forEach((f, i) => tone(t + i * 0.08, { f, dur: 0.1, vol: 0.06 * v })),
+};
+function sfx(name, vol = 1) {
+  if (!soundOn || !audioCtx || audioCtx.state !== 'running' || game.hidden) return;
+  const t = audioCtx.currentTime;
+  if (sfxLast[name] && t - sfxLast[name] < 0.035) return;   // évite la cacophonie (tir x5, rafales)
+  sfxLast[name] = t;
+  try { SOUNDS[name]?.(t, vol); } catch (_) {}
+}
+
 
 loadScreamerImage();
 buildClassPicker();

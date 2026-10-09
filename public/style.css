@@ -103,3 +103,48 @@ header{height:54px;flex:0 0 54px;display:flex;align-items:center;justify-content
 .br-column .roster-list .empty-team{grid-column:1/-1}
 .team-dot.br{background:conic-gradient(#ffd24d,#f87171,#c084fc,#75d8ff,#a3e635,#ffd24d)}
 @media(max-width:850px){.team-board.br-mode{grid-template-columns:1fr!important}}
+
+/* --- Pseudo + couleur --- */
+.name-block{flex:1;display:flex;flex-direction:column;gap:10px;min-width:0}
+.name-block .name-field{flex:none}
+.color-row{display:flex;flex-direction:column;align-items:flex-start;gap:6px;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#9aa69d}
+.color-picker{display:grid;grid-template-columns:repeat(8,18px);gap:5px}
+.color-picker button{width:18px!important;height:18px!important;min-width:0!important;min-height:0!important;padding:0!important;border-radius:50%!important;border:2px solid transparent!important;box-shadow:inset 0 0 0 2px rgba(0,0,0,.25);cursor:pointer}
+.color-picker button.active{border-color:#fff!important;transform:scale(1.15)}
+/* --- Réglages + rejoindre --- */
+.lobby-extras{display:grid;grid-template-columns:1fr minmax(260px,.55fr);gap:14px;margin-bottom:14px}
+.settings-panel,.join-card{padding:16px 18px;border:1px solid var(--line,#ffffff18);border-radius:18px;background:linear-gradient(180deg,rgba(29,39,32,.96),rgba(17,24,19,.96))}
+.settings-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px}
+.settings-head small{color:#7d8a81}
+.settings-row{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:10px}
+.setting{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:700;color:#b9c4bc}
+.setting input,.setting select{width:150px;padding:8px 10px;border-radius:10px;border:1px solid #ffffff22;background:#0d1410;color:#fff;font:inherit}
+.setting input:disabled,.setting select:disabled{opacity:.6}
+.power-chips{display:flex;flex-wrap:wrap;gap:6px}
+.power-chips button{padding:5px 10px!important;border-radius:999px!important;font-size:12px!important;border:1px solid var(--chip)!important;background:transparent!important;color:#8b968e!important;opacity:.55}
+.power-chips button.on{background:color-mix(in srgb,var(--chip) 22%,transparent)!important;color:#fff!important;opacity:1}
+.power-chips button:disabled{cursor:default}
+.join-card{display:flex;gap:14px;align-items:center}
+.join-card>div:last-child{display:flex;flex-direction:column;gap:6px;min-width:0}
+.join-card b{font-size:17px;color:var(--accent,#d8ef5a);word-break:break-all;user-select:all}
+.join-card small{color:#8b968e;font-size:12px}
+.qr{flex:none;width:96px;height:96px;padding:6px;border-radius:12px;background:#fff;display:grid;place-items:center;color:#0d1410;font-size:10px;text-align:center}
+.qr img,.qr canvas{width:84px!important;height:84px!important}
+.toggles{display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:flex-end}
+.br-banner[hidden]{display:none}
+/* --- Barre de la colline --- */
+.hill-bar{position:relative;width:150px;height:16px;border-radius:999px;background:#ffffff12;overflow:hidden;margin-top:4px}
+.hill-bar span{position:absolute;inset:0 auto 0 0;border-radius:999px;transition:width .25s}
+.hill-bar em{position:absolute;inset:0;display:grid;place-items:center;font-style:normal;font-size:11px;font-weight:900;color:#fff;text-shadow:0 1px 2px #000}
+/* --- Récompenses de fin de partie --- */
+.awards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.awards[hidden]{display:none}
+.award{padding:12px;border-radius:14px;background:rgba(216,239,90,.07);border:1px solid rgba(216,239,90,.25);text-align:center}
+.award i{display:block;font-style:normal;font-size:24px}
+.award small{display:block;color:#9aa69d;font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin:4px 0}
+.award b{display:block;font-size:15px}
+.award em{font-style:normal;color:var(--accent,#d8ef5a);font-size:12px}
+.score-team td.n small,.score-team th.n{white-space:nowrap}
+@media(max-width:850px){.lobby-extras{grid-template-columns:1fr}.toggles{justify-content:flex-start}}
+
+.setting[hidden]{display:none!important}

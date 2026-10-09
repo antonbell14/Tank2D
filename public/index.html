@@ -18,10 +18,24 @@
 
     <section id="lobby" class="lobby-card">
       <div class="lobby-topbar">
-        <label class="name-field">Ton pseudo<input id="name" maxlength="16" value="Joueur"></label>
-        <div class="lobby-top-actions"><canvas id="mapPreview" class="map-preview" width="200" height="116" aria-label="Aperçu de la carte"></canvas><label class="map-picker"><span>Mode</span><select id="modeSelect"><option value="teams">⚔ Équipes</option><option value="br">👑 Battle royale</option></select></label><label class="map-picker"><span>Carte</span><select id="mapSelect"><option value="carton">Carton classique</option></select></label><span class="lobby-badge"><span class="status-dot"></span>Salon LAN</span></div>
+        <div class="name-block"><label class="name-field">Ton pseudo<input id="name" maxlength="16" value="Joueur"></label><div class="color-row"><span>Ta couleur</span><div id="colorPicker" class="color-picker"></div></div></div>
+        <div class="lobby-top-actions"><canvas id="mapPreview" class="map-preview" width="200" height="116" aria-label="Aperçu de la carte"></canvas><label class="map-picker"><span>Mode</span><select id="modeSelect"><option value="teams">⚔ Équipes</option><option value="br">👑 Battle royale</option><option value="koth">⛰ Roi de la colline</option><option value="ctf">🚩 Capture du drapeau</option><option value="elim">💀 Élimination</option></select></label><label class="map-picker"><span>Carte</span><select id="mapSelect"><option value="carton">Carton classique</option></select></label><span class="lobby-badge"><span class="status-dot"></span>Salon LAN</span></div>
       </div>
-      <div id="brBanner" class="br-banner" hidden>👑 <b>Battle royale</b> : chacun pour soi, pas d'équipes ! Chaque char a sa propre couleur. Une zone rouge rétrécit : reste dedans. Le premier à <b>3 manches</b> gagne.</div>
+      <div id="brBanner" class="br-banner"></div>
+      <div class="lobby-extras">
+        <section id="settingsPanel" class="settings-panel">
+          <div class="settings-head"><span class="eyebrow">RÉGLAGES DE LA PARTIE</span><small id="settingsHint">Seul l'hôte peut les modifier.</small></div>
+          <div class="settings-row">
+            <label class="setting"><span id="winsLabel">Manches pour gagner</span><input id="setWins" type="number" min="1" max="15" step="1"></label>
+            <label class="setting" id="zoneSetting"><span>Vitesse de la zone</span><select id="setZone"><option value="slow">Lente</option><option value="normal">Normale</option><option value="fast">Rapide</option></select></label>
+          </div>
+          <div class="setting"><span>Bonus activés</span><div id="setPowers" class="power-chips"></div></div>
+        </section>
+        <section id="joinCard" class="join-card">
+          <div id="qr" class="qr"></div>
+          <div><span class="eyebrow">REJOINDRE DEPUIS UN AUTRE APPAREIL</span><b id="joinUrl">…</b><small id="joinOther">Même Wi-Fi requis. Scanne le QR code ou tape l'adresse.</small></div>
+        </section>
+      </div>
       <section class="class-picker">
         <div class="class-picker-head"><div><span class="eyebrow">TON CHAR</span><h2>Choisis ta classe</h2></div><small id="classHint">Modifiable jusqu'au lancement de la partie.</small></div>
         <div id="classGrid" class="class-grid"></div>
@@ -48,7 +62,7 @@
           <div id="bluePlayers" class="roster-list"></div>
         </section>
       </div>
-      <div class="lobby-footer"><div><p id="status">Connexion...</p><small>Les bots sont illimités. Une grande quantité peut réduire les performances.</small></div><label class="screamer-toggle"><input type="checkbox" id="screamerToggle" checked><span>😱 Screamer quand je meurs</span></label><button id="start" hidden>Lancer la partie <span>→</span></button></div>
+      <div class="lobby-footer"><div><p id="status">Connexion...</p><small>Les bots sont illimités. Une grande quantité peut réduire les performances.</small></div><div class="toggles"><label class="screamer-toggle"><input type="checkbox" id="soundToggle" checked><span>🔊 Sons</span></label><label class="screamer-toggle"><input type="checkbox" id="mouseToggle"><span>🖱 Viser à la souris</span></label><label class="screamer-toggle"><input type="checkbox" id="screamerToggle" checked><span>😱 Screamer quand je meurs</span></label></div><button id="start" hidden>Lancer la partie <span>→</span></button></div>
     </section>
 
     <section id="game" hidden>
@@ -76,10 +90,10 @@
       <div class="arena-wrap">
         <canvas id="arena" width="960" height="560" tabindex="0"></canvas>
         <div id="scoreOverlay" class="score-overlay" hidden>
-          <div class="score-overlay-card"><div class="score-overlay-head"><span class="eyebrow">TABLEAU DES SCORES</span><small>Relâche <kbd>Tab</kbd> pour fermer</small></div><div id="overlayScore" class="score-columns"></div></div>
+          <div class="score-overlay-card"><div class="score-overlay-head"><span class="eyebrow">TABLEAU DES SCORES</span><small>Relâche <kbd>Tab</kbd> pour fermer</small></div><div id="awards" class="awards" hidden></div><div id="overlayScore" class="score-columns"></div></div>
         </div>
       </div>
-      <div class="game-footer"><div class="help"><kbd>Z</kbd> avancer <kbd>S</kbd> reculer <kbd>Q</kbd><kbd>D</kbd> tourner <kbd>Espace</kbd> tirer <kbd>E</kbd> mine <kbd>Tab</kbd> scores</div><div class="match-actions"><button id="abandon" class="danger secondary-danger">Abandonner la manche</button><button id="abandonMatch" class="danger">Abandonner la partie</button></div></div>
+      <div class="game-footer"><div class="help"><kbd>Z</kbd> avancer <kbd>S</kbd> reculer <kbd>Q</kbd><kbd>D</kbd> tourner <kbd>Espace</kbd> tirer <kbd>E</kbd> mine <kbd>F</kbd> téléport <kbd>Tab</kbd> scores <span id="mouseHelp" hidden>· 🖱 viser + clic pour tirer</span></div><div class="match-actions"><button id="abandon" class="danger secondary-danger">Abandonner la manche</button><button id="abandonMatch" class="danger">Abandonner la partie</button></div></div>
     </section>
   </main>
 
@@ -99,6 +113,7 @@
       </div>
     </div>
   <div id="screamer" class="screamer" hidden aria-hidden="true"><img id="screamerImg" alt=""></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" async></script>
   <script src="game.js"></script>
 </body>
 </html>
