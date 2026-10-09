@@ -1,6 +1,6 @@
 TANK EN CARTON - VERSION PYTHON LAN
 
-1. Installe Python 3 si nécessaire.
+11111. Installe Python 3 si nécessaire.
 2. Double-clique sur « Lancer le jeu.bat ».
 3. Ton navigateur s’ouvre automatiquement.
 4. Les autres joueurs scannent le QR code du lobby (cadre « Rejoindre depuis un
