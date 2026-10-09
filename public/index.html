@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Tank en carton</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div class="brand">
+        <span class="brand-mark">▰</span>
+        <div><h1>TANK EN CARTON</h1><p>Des tanks fragiles. Des ricochets douteux.</p></div>
+      </div>
+      <span id="net">Connexion...</span>
+    </header>
+
+    <section id="lobby" class="lobby-card">
+      <div class="lobby-topbar">
+        <label class="name-field">Ton pseudo<input id="name" maxlength="16" value="Joueur"></label>
+        <div class="lobby-top-actions"><canvas id="mapPreview" class="map-preview" width="200" height="116" aria-label="Aperçu de la carte"></canvas><label class="map-picker"><span>Mode</span><select id="modeSelect"><option value="teams">⚔ Équipes</option><option value="br">👑 Battle royale</option></select></label><label class="map-picker"><span>Carte</span><select id="mapSelect"><option value="carton">Carton classique</option></select></label><span class="lobby-badge"><span class="status-dot"></span>Salon LAN</span></div>
+      </div>
+      <div id="brBanner" class="br-banner" hidden>👑 <b>Battle royale</b> : chacun pour soi, pas d'équipes ! Chaque char a sa propre couleur. Une zone rouge rétrécit : reste dedans. Le premier à <b>3 manches</b> gagne.</div>
+      <section class="class-picker">
+        <div class="class-picker-head"><div><span class="eyebrow">TON CHAR</span><h2>Choisis ta classe</h2></div><small id="classHint">Modifiable jusqu'au lancement de la partie.</small></div>
+        <div id="classGrid" class="class-grid"></div>
+      </section>
+      <div id="teamBoard" class="team-board">
+        <section class="team-column br-column" hidden>
+          <div class="team-column-head"><div><span class="team-dot br"></span><h2>Participants</h2></div><span id="playerCount" class="team-count">0</span></div>
+          <div class="team-actions"><button data-team="player" class="join-team">Participer</button><button data-add-bot="player" class="secondary">+ BOT</button></div>
+          <div id="playerPlayers" class="roster-list"></div>
+        </section>
+        <section class="team-column yellow-column">
+          <div class="team-column-head"><div><span class="team-dot yellow"></span><h2>Équipe jaune</h2></div><span id="yellowCount" class="team-count">0</span></div>
+          <div class="team-actions"><button data-team="yellow" class="join-team">Rejoindre</button><button data-add-bot="yellow" class="secondary">+ BOT</button></div>
+          <div id="yellowPlayers" class="roster-list"></div>
+        </section>
+        <section class="team-column spectator-column">
+          <div class="team-column-head"><div><span class="team-dot grey"></span><h2>Spectateurs</h2></div><span id="spectatorCount" class="team-count">0</span></div>
+          <div class="team-actions centered"><button data-team="spectator" class="join-team">Rejoindre</button></div>
+          <div id="spectatorPlayers" class="roster-list"></div>
+        </section>
+        <section class="team-column blue-column">
+          <div class="team-column-head"><div><span class="team-dot blue"></span><h2>Équipe bleue</h2></div><span id="blueCount" class="team-count">0</span></div>
+          <div class="team-actions"><button data-team="blue" class="join-team">Rejoindre</button><button data-add-bot="blue" class="secondary">+ BOT</button></div>
+          <div id="bluePlayers" class="roster-list"></div>
+        </section>
+      </div>
+      <div class="lobby-footer"><div><p id="status">Connexion...</p><small>Les bots sont illimités. Une grande quantité peut réduire les performances.</small></div><label class="screamer-toggle"><input type="checkbox" id="screamerToggle" checked><span>😱 Screamer quand je meurs</span></label><button id="start" hidden>Lancer la partie <span>→</span></button></div>
+    </section>
+
+    <section id="game" hidden>
+      <div class="scoreboard">
+        <div class="player-score yellow-score"><b id="leftLabel">Équipe jaune</b><div id="yellowWins" class="win-icons" aria-label="Victoires de l'équipe jaune"></div></div>
+        <span id="message">Premier à 5 manches</span>
+        <div class="player-score blue-score"><b id="rightLabel">Équipe bleue</b><div id="blueWins" class="win-icons" aria-label="Victoires de l'équipe bleue"></div></div>
+      </div>
+
+      <div id="upgradePanel" class="upgrade-panel" hidden>
+        <div class="upgrade-head">
+          <div><span class="eyebrow">ENTRE DEUX MANCHES</span><h2>Améliore ton char</h2><p>Un choix permanent pour le reste de la partie. <span id="prepClass"></span></p></div>
+          <div class="timer"><strong id="prepTimer">10</strong><span>secondes</span></div>
+        </div>
+        <div class="upgrade-grid">
+          <button data-upgrade="speed"><i>⚡</i><div><span>Vitesse</span><small>Déplacement du char</small></div><b class="levels"></b></button>
+          <button data-upgrade="reload"><i>⏱</i><div><span>Recharge</span><small>Cadence de tir</small></div><b class="levels"></b></button>
+          <button data-upgrade="health"><i>♥</i><div><span>Blindage</span><small>+1 point de vie</small></div><b class="levels"></b></button>
+          <button data-upgrade="projectile"><i>➤</i><div><span>Projectiles</span><small>Vitesse des obus</small></div><b class="levels"></b></button>
+        </div>
+        <p id="upgradeStatus">Choisis une amélioration avant la fin du compte à rebours.</p>
+        <div class="prep-score"><div class="prep-score-head"><span class="eyebrow">SCORE DE LA PARTIE</span></div><div id="prepScore" class="score-columns"></div></div>
+      </div>
+
+      <div class="arena-wrap">
+        <canvas id="arena" width="960" height="560" tabindex="0"></canvas>
+        <div id="scoreOverlay" class="score-overlay" hidden>
+          <div class="score-overlay-card"><div class="score-overlay-head"><span class="eyebrow">TABLEAU DES SCORES</span><small>Relâche <kbd>Tab</kbd> pour fermer</small></div><div id="overlayScore" class="score-columns"></div></div>
+        </div>
+      </div>
+      <div class="game-footer"><div class="help"><kbd>Z</kbd> avancer <kbd>S</kbd> reculer <kbd>Q</kbd><kbd>D</kbd> tourner <kbd>Espace</kbd> tirer <kbd>E</kbd> mine <kbd>Tab</kbd> scores</div><div class="match-actions"><button id="abandon" class="danger secondary-danger">Abandonner la manche</button><button id="abandonMatch" class="danger">Abandonner la partie</button></div></div>
+    </section>
+  </main>
+
+    <div id="botModal" class="modal-backdrop" hidden>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="botModalTitle">
+        <button id="closeBotModal" class="modal-close" type="button" aria-label="Fermer">×</button>
+        <span class="modal-kicker">NOUVEAU COÉQUIPIER</span>
+        <h2 id="botModalTitle">Choisir la difficulté</h2>
+        <p id="botModalDescription">Le bot sera ajouté à l'équipe sélectionnée.</p>
+        <div class="bot-class-row"><span>Char du bot</span><div id="botClassChoices"><button type="button" data-bot-class="random" class="active">Aléatoire</button><button type="button" data-bot-class="light">Léger</button><button type="button" data-bot-class="heavy">Lourd</button><button type="button" data-bot-class="sniper">Sniper</button></div></div>
+        <div class="difficulty-grid">
+          <button type="button" data-bot-level="easy"><span class="difficulty-icon">●</span><b>Facile</b><small>Réagit lentement et vise moins bien</small></button>
+          <button type="button" data-bot-level="normal" class="recommended"><span class="difficulty-icon">◆</span><b>Normal</b><small>Équilibré pour une partie classique</small><em>Recommandé</em></button>
+          <button type="button" data-bot-level="hard"><span class="difficulty-icon">▲</span><b>Difficile</b><small>Précis, agressif et réactif</small></button>
+        </div>
+        <div class="modal-actions"><button id="cancelBotModal" type="button" class="button-ghost">Annuler</button></div>
+      </div>
+    </div>
+  <div id="screamer" class="screamer" hidden aria-hidden="true"><img id="screamerImg" alt=""></div>
+  <script src="game.js"></script>
+</body>
+</html>
