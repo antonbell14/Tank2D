@@ -9,7 +9,7 @@ const lobby = $('#lobby'), game = $('#game'), nameEl = $('#name'), statusEl = $(
 const startBtn = $('#start'), abandon = $('#abandon'), abandonMatch = $('#abandonMatch');
 const upgradePanel = $('#upgradePanel'), prepTimer = $('#prepTimer'), upgradeStatus = $('#upgradeStatus');
 const botModal = $('#botModal'), closeBotModal = $('#closeBotModal'), cancelBotModal = $('#cancelBotModal');
-const mapSelect = $('#mapSelect'), mapPreview = $('#mapPreview'), classGrid = $('#classGrid');
+const mapSelect = $('#mapSelect'), mapGallery = $('#mapGallery'), classGrid = $('#classGrid');
 const arenaWrap = $('.arena-wrap'), scoreOverlay = $('#scoreOverlay'), overlayScore = $('#overlayScore');
 const prepScore = $('#prepScore'), prepClass = $('#prepClass');
 const modeSelect = $('#modeSelect'), brBanner = $('#brBanner'), leftLabel = $('#leftLabel'), rightLabel = $('#rightLabel');
@@ -40,6 +40,11 @@ const WIN_SETTING = {
   teams: ['teamsWins', 'Manches pour gagner', 1, 15], br: ['brWins', 'Manches pour gagner', 1, 10],
   koth: ['kothTime', 'Secondes sur la colline', 15, 300], ctf: ['ctfCaps', 'Captures pour gagner', 1, 10], elim: ['elimLives', 'Vies par joueur', 1, 10],
 };
+const POWER_DESC = {
+  speed: 'Vitesse augmentée 6 s', shield: 'Bloque le prochain tir', rapid: 'Cadence de tir augmentée 6 s', homing: 'Obus téléguidés 6 s',
+  rocket: 'Prochain tir explosif (2 dégâts)', spread: 'Tir dans 5 directions 6 s', bouncy: 'Obus qui rebondit sans fin', mine: '2 mines à poser (E)',
+  invis: 'Invisible pour l\'ennemi 5 s', laser: '3 lasers qui traversent tout', magnet: 'Attire les bonus proches 8 s', teleport: '2 sauts vers l\'avant (F)',
+};
 const POWER_INFO = {
   speed:    { color: '#fb923c', icon: '⚡', name: 'Turbo' },
   shield:   { color: '#a78bfa', icon: '◆', name: 'Bouclier' },
@@ -68,6 +73,15 @@ let soundOn = pref('sound', 'on') !== 'off', mouseAim = pref('mouseAim', 'off') 
 soundToggle.checked = soundOn; mouseToggle.checked = mouseAim; mouseHelp.hidden = !mouseAim;
 soundToggle.onchange = () => { soundOn = soundToggle.checked; savePref('sound', soundOn ? 'on' : 'off'); };
 mouseToggle.onchange = () => { mouseAim = mouseToggle.checked; mouseHelp.hidden = !mouseAim; savePref('mouseAim', mouseAim ? 'on' : 'off'); };
+
+// Réglages : volume et sensibilité de la visée à la souris.
+let soundVolume = Number(pref('volume', 70)) / 100, aimSens = Number(pref('aimSens', 10));
+const volumeRange = $('#volumeRange'), sensRange = $('#sensRange');
+const sensLabel = v => v >= 10 ? 'Instantanée' : `${v} / 9`;
+volumeRange.value = Math.round(soundVolume * 100); $('#volumeVal').textContent = `${volumeRange.value} %`;
+volumeRange.oninput = () => { soundVolume = volumeRange.value / 100; $('#volumeVal').textContent = `${volumeRange.value} %`; savePref('volume', volumeRange.value); };
+sensRange.value = aimSens; $('#sensVal').textContent = sensLabel(aimSens);
+sensRange.oninput = () => { aimSens = Number(sensRange.value); $('#sensVal').textContent = sensLabel(aimSens); savePref('aimSens', aimSens); };
 
 // Caractéristiques des classes (remplacées par celles du serveur à la connexion).
 let CLASSES = {
@@ -104,12 +118,48 @@ function escapeHtml(value) {
 // Lobby
 // =============================================================================
 
+// Petite illustration du char d'un joueur (mise en cache par classe + couleurs).
+const tankIcons = new Map();
+function tankIcon(cls, body, accent) {
+  const key = `${cls}|${body}|${accent}`;
+  if (!tankIcons.has(key)) {
+    const cv = document.createElement('canvas'); cv.width = 100; cv.height = 64;
+    const g = cv.getContext('2d'); g.translate(42, 32); g.scale(1.1, 1.1);
+    drawTankShape(g, cls, body, 0, accent);
+    tankIcons.set(key, cv.toDataURL());
+  }
+  return tankIcons.get(key);
+}
 function rosterItem(p) {
   const mine = p.id === id, bot = p.isBot;
   const role = bot ? `IA ${p.difficulty === 'easy' ? 'facile' : p.difficulty === 'hard' ? 'difficile' : 'normale'}` : p.host ? 'Hôte du salon' : 'Joueur';
   const removeBtn = bot && me()?.host ? `<button type="button" class="remove-bot" data-remove-bot="${p.id}" title="Retirer ce bot">×</button>` : '';
-  const ring = p.prefColor ? ` style="box-shadow:inset 0 0 0 2px ${p.prefColor}"` : '';
-  return `<div class="roster-item ${bot ? 'bot' : ''} ${mine ? 'mine' : ''}"><span class="roster-avatar"${ring}>${bot ? 'BOT' : escapeHtml(p.name).slice(0, 1).toUpperCase()}</span><div><b>${escapeHtml(p.name)}</b><small>${role} · ${className(p.tankClass)}</small></div>${removeBtn}</div>`;
+  const accent = p.prefColor || p.color || '#d8ef5a';
+  const body = TEAM_COLOR[p.team] || accent;
+  return `<div class="roster-item ${bot ? 'bot' : ''} ${mine ? 'mine' : ''}" style="--ring:${accent}"><span class="roster-avatar"><img alt="" src="${tankIcon(p.tankClass || 'light', body, accent)}"></span><div><b>${p.host ? '<i class="crown" title="Hôte">👑</i>' : ''}${escapeHtml(p.name)}${bot ? '<span class="bot-tag">BOT</span>' : ''}${mine ? ' <small>(toi)</small>' : ''}</b><small>${role} · ${className(p.tankClass)}</small></div>${removeBtn}</div>`;
+}
+
+// Colonne de droite : tous les joueurs connectés, groupés selon le mode.
+function renderSideRoster(groups, ffa, mine) {
+  const defs = ffa ? [['player', 'Participants', 'br'], ['spectator', 'Spectateurs', 'grey']]
+    : [['yellow', 'Équipe jaune', 'yellow'], ['blue', 'Équipe bleue', 'blue'], ['spectator', 'Spectateurs', 'grey']];
+  $('#liveRoster').innerHTML = defs.map(([k, label, dot]) =>
+    `<section class="side-group"><h3><span class="team-dot ${dot}"></span>${label}<em>${groups[k].length}</em></h3>${groups[k].map(rosterItem).join('') || '<div class="empty-team">Personne</div>'}</section>`).join('');
+  $('#sideCount').textContent = players.length;
+  const team = ffa ? 'player' : (groups.yellow.length <= groups.blue.length ? 'yellow' : 'blue');
+  $('#sideBotSlot').innerHTML = mine?.host ? `<button type="button" data-add-bot="${team}">+ BOT</button>` : '';
+}
+
+// Bandeau du haut, pastilles de la barre de lancement, pseudo de la scène.
+function updateLobbyHeader(mine, fighters, info) {
+  const name = mine?.name || 'Joueur';
+  $('#userName').textContent = name;
+  $('#stageName').textContent = name;
+  $('#userDot').style.background = myTankColor();
+  const badge = $('#hostBadge'); badge.textContent = mine?.host ? '👑 HÔTE' : 'INVITÉ'; badge.classList.toggle('host', !!mine?.host);
+  $('#chipFighters').textContent = `⚔ ${plural(fighters, 'combattant')}`;
+  $('#chipMode').textContent = `${info.icon} ${info.name}`;
+  $('#chipMap').textContent = `🗺 ${state.map?.name || '…'}`;
 }
 
 let lobbySignature = '';
@@ -118,6 +168,7 @@ function renderLobby() {
   const signature = JSON.stringify([players.map(p => [p.id, p.name, p.team, p.host, p.tankClass, p.difficulty, p.prefColor]), id, state.map?.id, state.gameMode, state.settings, ADDRESSES]);
   if (signature === lobbySignature) return;
   lobbySignature = signature;
+  drawClassIcons();
 
   const ffa = isFFA();
   teamBoard.classList.toggle('br-mode', ffa);
@@ -145,6 +196,7 @@ function renderLobby() {
   if (state.map && mapSelect.value !== state.map.id) mapSelect.value = state.map.id;
   modeSelect.disabled = !mine?.host;
   modeSelect.value = mode();
+  document.querySelectorAll('[data-mode]').forEach(b => { b.classList.toggle('active', b.dataset.mode === mode()); b.disabled = !mine?.host; });
   const info = MODE_INFO[mode()] || MODE_INFO.teams;
   brBanner.innerHTML = `${info.icon} <b>${info.name}</b> : ${info.text(settings())}`;
   renderSettings(mine); renderColorPicker(mine); renderJoinCard();
@@ -154,7 +206,19 @@ function renderLobby() {
       : ffa ? 'Il faut au moins 2 participants (joueurs ou bots) dans ce mode.' : 'Ajoute au moins un joueur ou un bot dans une équipe.')
     : 'En attente du lancement par l’hôte.';
   startBtn.disabled = fighters < needed;
+  $('#tabCount').textContent = fighters;
+  renderSideRoster(groups, ffa, mine); updateLobbyHeader(mine, fighters, info);
 }
+
+// Onglets du lobby et boutons de mode.
+document.querySelectorAll('[data-tab]').forEach(tab => tab.onclick = () => {
+  const name = tab.dataset.tab;
+  document.querySelectorAll('[data-tab]').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('[data-panel]').forEach(p => p.classList.toggle('active', p.dataset.panel === name));
+  lobby.classList.remove('view-player', 'view-match', 'view-teams', 'view-options'); lobby.classList.add(`view-${name}`);
+  $('.tab-panels').scrollTop = 0;
+});
+document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { if (!b.disabled) send({ type: 'game_mode', gameMode: b.dataset.mode }); });
 
 // Réglages de la partie (modifiables par l'hôte seulement).
 function renderSettings(mine) {
@@ -165,8 +229,10 @@ function renderSettings(mine) {
   setWins.disabled = !host; setZone.disabled = !host; setZone.value = s.zoneSpeed || 'normal';
   zoneSetting.hidden = !isBR();
   settingsHint.textContent = host ? 'Tu es l’hôte : tu peux tout modifier.' : 'Seul l’hôte peut les modifier.';
-  setPowers.innerHTML = Object.entries(POWER_INFO).map(([k, p]) =>
-    `<button type="button" data-power="${k}" class="${s.powers?.[k] === false ? '' : 'on'}" style="--chip:${p.color}" ${host ? '' : 'disabled'}>${p.icon} ${p.name}</button>`).join('');
+  setPowers.innerHTML = Object.entries(POWER_INFO).map(([k, p]) => {
+    const on = s.powers?.[k] !== false;
+    return `<button type="button" data-power="${k}" class="power-card ${on ? 'on' : ''}" style="--chip:${p.color}" ${host ? '' : 'disabled'}><i>${p.icon}</i><b>${p.name}</b><small>${POWER_DESC[k] || ''}</small><span class="pc-state">${on ? 'ON' : 'OFF'}</span></button>`;
+  }).join('');
 }
 setWins.onchange = () => send({ type: 'settings', settings: { [setWins.dataset.key]: Number(setWins.value) } });
 setZone.onchange = () => send({ type: 'settings', settings: { zoneSpeed: setZone.value } });
@@ -189,6 +255,7 @@ let qrDone = '', qrTries = 0;
 function renderJoinCard() {
   const list = ADDRESSES.filter(a => !a.includes('127.0.0.1')), main = list[0];
   joinUrl.textContent = main || 'Aucun réseau détecté';
+  $('#joinTop').textContent = main ? main.replace(/^https?:\/\//, '') : 'Aucun réseau';
   joinOther.textContent = list.length > 1 ? `Si ça ne marche pas, essaie : ${list.slice(1).join(' · ')}` : 'Même Wi-Fi requis. Scanne le QR code ou tape l’adresse.';
   if (!main || qrDone === main) return;
   if (!window.QRCode) {
@@ -202,6 +269,7 @@ function renderJoinCard() {
 }
 
 function populateMaps(maps) {
+  MAP_CATALOG = maps.map(normMap); buildMapGallery();
   mapSelect.innerHTML = maps.map(m => `<option value="${m.id}">${escapeHtml(m.name)}${m.id === 'random' ? '' : ` · ${m.w}×${m.h}`}</option>`).join('');
   if (state.map) mapSelect.value = state.map.id;
 }
@@ -214,16 +282,12 @@ function buildClassPicker() {
   const bar = (label, value) => `<div class="stat"><span>${label}</span><i><span style="width:${Math.round(Math.min(1, value) * 100)}%"></span></i></div>`;
   classGrid.innerHTML = Object.entries(CLASSES).map(([key, s]) => `
     <button type="button" class="class-card" data-class="${key}">
-      <canvas width="128" height="128" data-class-icon="${key}"></canvas>
-      <div><b>${s.name}</b><p>${CLASS_TEXT[key] || ''}</p>
-        ${bar('Vie', s.hp / 5)}${bar('Vitesse', s.speed / maxSpeed)}${bar('Cadence', minReload / s.reload)}${bar('Puissance', (s.damage * s.bullet) / maxPower)}
-      </div>
+      <span class="class-kicker">CLASSE</span><b>${s.name}</b>
+      <canvas width="440" height="220" data-class-icon="${key}"></canvas>
+      <p>${CLASS_TEXT[key] || ''}</p>
+      ${bar('Vie', s.hp / 5)}${bar('Vitesse', s.speed / maxSpeed)}${bar('Cadence', minReload / s.reload)}${bar('Puissance', (s.damage * s.bullet) / maxPower)}
     </button>`).join('');
-  classGrid.querySelectorAll('[data-class-icon]').forEach(canvas => {
-    const g = canvas.getContext('2d');
-    g.clearRect(0, 0, 128, 128); g.translate(64, 64); g.scale(2.6, 2.6); g.rotate(-Math.PI / 2);
-    drawTankShape(g, canvas.dataset.classIcon, '#d8ef5a');
-  });
+  drawClassIcons();
   classGrid.querySelectorAll('[data-class]').forEach(b => b.onclick = () => {
     send({ type: 'tank_class', tankClass: b.dataset.class });
     savePref('tankClass', b.dataset.class);
@@ -231,38 +295,203 @@ function buildClassPicker() {
   lobbySignature = '';
 }
 
-// Aperçu miniature de la carte choisie dans le lobby.
-let previewSignature = '';
-function renderMapPreview() {
-  if (!state.map || !mapPreview) return;
-  const signature = `${state.map.id}-${state.map.version}-${state.gameMode}`;
-  if (signature === previewSignature) return;
-  previewSignature = signature;
-  const g = mapPreview.getContext('2d'), m = state.map, t = m.theme || {};
-  const s = Math.min(mapPreview.width / m.w, mapPreview.height / m.h);
-  const ox = (mapPreview.width - m.w * s) / 2, oy = (mapPreview.height - m.h * s) / 2;
-  g.clearRect(0, 0, mapPreview.width, mapPreview.height);
-  g.fillStyle = t.floor || '#172119'; g.fillRect(ox, oy, m.w * s, m.h * s);
-  for (const w of m.walls) {
-    g.fillStyle = w.kind === 'crate' ? '#b07a43' : w.kind === 'ruin' ? '#9a6a4f' : (t.wall || '#7b5b3c');
-    g.fillRect(ox + w.x * s, oy + w.y * s, Math.max(1.5, w.w * s), Math.max(1.5, w.h * s));
+// Les chars des cartes de classe et l'aperçu du joueur prennent la couleur choisie.
+const myTankColor = () => me()?.prefColor || pref('tankColor', null) || '#d8ef5a';
+function drawClassIcons() {
+  const col = myTankColor();
+  classGrid.querySelectorAll('[data-class-icon]').forEach(cv => {
+    const g = cv.getContext('2d');
+    g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height);
+    g.fillStyle = 'rgba(0,0,0,.25)'; g.beginPath(); g.ellipse(cv.width / 2 + 4, cv.height / 2 + 26, 100, 34, 0, 0, 7); g.fill();
+    g.translate(cv.width / 2 - 4, cv.height / 2); g.scale(4.4, 4.4);
+    drawTankShape(g, cv.dataset.classIcon, col, 0, col);
+  });
+}
+
+// Scène du lobby : le char du joueur sur une plaque tournante, toujours visible. La couleur et la classe suivent les choix en direct.
+const previewCv = $('#playerPreview'), previewCtx = previewCv.getContext('2d'), previewCaption = $('#previewCaption');
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function drawPlayerPreview(now) {
+  requestAnimationFrame(drawPlayerPreview);
+  if (lobby.hidden || !$('#intro').hidden || document.hidden) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2), w = Math.round(previewCv.clientWidth * dpr), h = Math.round(previewCv.clientHeight * dpr);
+  if (!w || !h) return;
+  if (previewCv.width !== w || previewCv.height !== h) { previewCv.width = w; previewCv.height = h; }
+  const cls = me()?.tankClass || 'light', col = myTankColor(), g = previewCtx, t = now / 1000;
+  const caption = `Classe ${className(cls)}`;
+  if (previewCaption.textContent !== caption) previewCaption.textContent = caption;
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, w, h);
+  const sc = Math.min(w * 0.5, h * 0.55) / 52, cx = w / 2, cy = h * 0.5, R = sc * 40;
+  // plaque tournante : disque lumineux + anneaux
+  const glow = g.createRadialGradient(cx, cy, R * 0.15, cx, cy, R);
+  glow.addColorStop(0, 'rgba(240,196,110,.32)'); glow.addColorStop(1, 'rgba(240,196,110,0)');
+  g.fillStyle = glow; g.beginPath(); g.arc(cx, cy, R, 0, 7); g.fill();
+  g.lineWidth = Math.max(2, sc * 0.3); g.strokeStyle = 'rgba(240,196,110,.55)'; g.beginPath(); g.arc(cx, cy, R * 0.92, 0, 7); g.stroke();
+  g.setLineDash([sc * 2, sc * 2.6]); g.lineDashOffset = -t * sc * 7; g.strokeStyle = 'rgba(216,239,90,.45)';
+  g.beginPath(); g.arc(cx, cy, R * 1.08, 0, 7); g.stroke(); g.setLineDash([]);
+  g.fillStyle = 'rgba(0,0,0,.28)'; g.beginPath(); g.ellipse(cx + sc * 2, cy + sc * 3, sc * 26, sc * 19, 0, 0, 7); g.fill();
+  // le char : rotation continue à 360°, tourelle qui balance doucement
+  g.save(); g.translate(cx, cy); g.rotate(reduceMotion ? 0.6 : t * 0.8); g.scale(sc, sc);
+  drawTankShape(g, cls, col, reduceMotion ? 0 : Math.sin(t * 1.1) * 0.45, col); g.restore();
+}
+requestAnimationFrame(drawPlayerPreview);
+
+// Pseudo affiché immédiatement dans la scène pendant la saisie.
+nameEl.addEventListener('input', () => { $('#stageName').textContent = nameEl.value || 'Joueur'; });
+
+// État de connexion recopié dans la barre du haut.
+const netTopText = $('#netTopText');
+new MutationObserver(() => { netTopText.textContent = net.textContent; }).observe(net, { childList: true, characterData: true, subtree: true });
+netTopText.textContent = net.textContent;
+
+// Cartes : galerie dans l'onglet Partie + vue agrandie.
+let MAP_CATALOG = [];
+function normMap(m) {
+  return { ...m,
+    walls: (m.walls || []).map(w => Array.isArray(w) ? { x: w[0], y: w[1], w: w[2], h: w[3], kind: w[4] || 'wall' } : w),
+    teleporters: (m.teleporters || []).map(t => Array.isArray(t) ? { ax: t[0], ay: t[1], bx: t[2], by: t[3] } : t) };
+}
+const WALL_LOOK = { crate: ['#b07a43', '#d9a05a'], ruin: ['#9a6a4f', '#c58f6d'] };
+
+// Repères du mode de jeu sur la vue agrandie (positions approximatives, comme dans le jeu).
+function drawMapMarkers(g, m, s, ox, oy) {
+  const X = v => ox + v * s, Y = v => oy + v * s, md = mode();
+  const label = (txt, x, y, col) => { g.fillStyle = col; g.font = '800 13px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, x, y); };
+  g.save();
+  if (!isFFA()) {
+    g.fillStyle = 'rgba(241,206,92,.12)'; g.fillRect(X(0), Y(0), 150 * s, m.h * s);
+    g.fillStyle = 'rgba(131,210,246,.12)'; g.fillRect(X(m.w - 150), Y(0), 150 * s, m.h * s);
+    label('DÉPART JAUNE', X(75), Y(16), '#f1ce5c'); label('DÉPART BLEU', X(m.w - 75), Y(16), '#83d2f6');
+  } else {
+    g.setLineDash([8, 6]); g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 2;
+    g.beginPath(); g.ellipse(X(m.w / 2), Y(m.h / 2), (m.w / 2 - 80) * s, (m.h / 2 - 70) * s, 0, 0, 7); g.stroke(); g.setLineDash([]);
+    label('Départs répartis le long des bords', X(m.w / 2), Y(22), 'rgba(255,255,255,.65)');
   }
-  g.fillStyle = '#38bdf8';
-  for (const tp of m.teleporters || []) for (const [px, py] of [[tp.ax, tp.ay], [tp.bx, tp.by]]) { g.beginPath(); g.arc(ox + px * s, oy + py * s, 3, 0, 7); g.fill(); }
-  const cx = ox + m.w * s / 2, cy = oy + m.h * s / 2;
-  if (isBR()) {
-    g.strokeStyle = 'rgba(248,113,113,.8)'; g.setLineDash([4, 3]); g.lineWidth = 1.5;
-    g.beginPath(); g.arc(cx, cy, Math.min(m.w, m.h) * s * 0.42, 0, 7); g.stroke(); g.setLineDash([]);
-  } else if (!isFFA()) {
-    g.fillStyle = '#f1ce5c'; g.fillRect(ox + 4, oy + m.h * s / 2 - 6, 3, 12);
-    g.fillStyle = '#83d2f6'; g.fillRect(ox + m.w * s - 7, oy + m.h * s / 2 - 6, 3, 12);
-    if (mode() === 'koth') { g.strokeStyle = '#d8ef5a'; g.lineWidth = 1.5; g.beginPath(); g.arc(cx, cy, 95 * s, 0, 7); g.stroke(); }
+  if (md === 'br') {
+    const r = Math.min(m.w, m.h) * 0.12 * s;
+    g.strokeStyle = 'rgba(248,113,113,.9)'; g.lineWidth = 2.5; g.setLineDash([6, 5]);
+    g.beginPath(); g.arc(X(m.w / 2), Y(m.h / 2), r, 0, 7); g.stroke(); g.setLineDash([]);
+    label('Fin de la zone (≈ centre)', X(m.w / 2), Y(m.h / 2) - r - 14, '#f87171');
+  } else if (md === 'koth') {
+    g.strokeStyle = '#d8ef5a'; g.lineWidth = 3; g.fillStyle = 'rgba(216,239,90,.1)';
+    g.beginPath(); g.arc(X(m.w / 2), Y(m.h / 2), 95 * s, 0, 7); g.fill(); g.stroke();
+    label('COLLINE', X(m.w / 2), Y(m.h / 2) - 95 * s - 14, '#d8ef5a');
+  } else if (md === 'ctf') {
+    label('🚩', X(45), Y(m.h / 2), '#f1ce5c'); label('🚩', X(m.w - 45), Y(m.h / 2), '#83d2f6');
+    label('Drapeau jaune', X(48), Y(m.h / 2) + 26, '#f1ce5c'); label('Drapeau bleu', X(m.w - 48), Y(m.h / 2) + 26, '#83d2f6');
+  }
+  g.restore();
+}
+
+// Dessine une carte dans un canvas : miniature, ou vue détaillée (grille, détails des obstacles, repères).
+function drawMapOn(cv, m, detail = false) {
+  const g = cv.getContext('2d'), th = m.theme || {};
+  const s = Math.min(cv.width / m.w, cv.height / m.h), ox = (cv.width - m.w * s) / 2, oy = (cv.height - m.h * s) / 2;
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height);
+  g.fillStyle = th.floor || '#172119'; g.fillRect(ox, oy, m.w * s, m.h * s);
+  if (detail) {
+    g.strokeStyle = th.grid || '#ffffff0b'; g.lineWidth = 1; g.beginPath();
+    for (let gx = 0; gx <= m.w; gx += 40) { g.moveTo(ox + gx * s, oy); g.lineTo(ox + gx * s, oy + m.h * s); }
+    for (let gy = 0; gy <= m.h; gy += 40) { g.moveTo(ox, oy + gy * s); g.lineTo(ox + m.w * s, oy + gy * s); }
+    g.stroke();
+  }
+  if (m.ice) { g.fillStyle = 'rgba(160,215,255,.07)'; g.fillRect(ox, oy, m.w * s, m.h * s); }
+  if (detail && !m.random) drawMapMarkers(g, m, s, ox, oy);
+  for (const w of m.walls) {
+    const [fill, edge] = WALL_LOOK[w.kind] || [th.wall || '#7b5b3c', th.edge || '#a9855e'];
+    const px = ox + w.x * s, py = oy + w.y * s, pw = Math.max(1.5, w.w * s), ph = Math.max(1.5, w.h * s);
+    g.fillStyle = fill; g.fillRect(px, py, pw, ph);
+    if (!detail) continue;
+    g.strokeStyle = edge; g.lineWidth = 2; g.strokeRect(px + 1, py + 1, pw - 2, ph - 2);
+    g.lineWidth = 1.5; g.beginPath();
+    if (w.kind === 'crate') { g.moveTo(px + 4, py + 4); g.lineTo(px + pw - 4, py + ph - 4); g.moveTo(px + pw - 4, py + 4); g.lineTo(px + 4, py + ph - 4); }
+    else if (w.kind === 'ruin') { g.moveTo(px + pw * .2, py); g.lineTo(px + pw * .45, py + ph * .4); g.lineTo(px + pw * .3, py + ph); g.moveTo(px + pw * .45, py + ph * .4); g.lineTo(px + pw * .85, py + ph * .55); }
+    g.stroke();
+  }
+  const tr = detail ? 22 * s : 3.5;
+  for (const t of m.teleporters || []) {
+    if (detail) { g.strokeStyle = 'rgba(56,189,248,.5)'; g.setLineDash([5, 6]); g.lineWidth = 2; g.beginPath(); g.moveTo(ox + t.ax * s, oy + t.ay * s); g.lineTo(ox + t.bx * s, oy + t.by * s); g.stroke(); g.setLineDash([]); }
+    for (const [px, py] of [[t.ax, t.ay], [t.bx, t.by]]) {
+      g.fillStyle = '#38bdf8'; g.beginPath(); g.arc(ox + px * s, oy + py * s, tr, 0, 7); g.fill();
+      if (detail) { g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.arc(ox + px * s, oy + py * s, tr * 0.55, 0, 7); g.stroke(); }
+    }
   }
   if (m.random) {
-    g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(0, 0, mapPreview.width, mapPreview.height);
-    g.fillStyle = '#fff'; g.font = '900 30px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText('?', mapPreview.width / 2, mapPreview.height / 2);
+    g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(ox, oy, m.w * s, m.h * s);
+    g.fillStyle = '#fff'; g.font = `900 ${Math.round(cv.height * 0.4)}px system-ui`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('?', cv.width / 2, cv.height / 2 + cv.height * 0.03);
   }
+  g.strokeStyle = 'rgba(255,255,255,.14)'; g.lineWidth = 2; g.strokeRect(ox, oy, m.w * s, m.h * s);
+}
+
+const MAP_TIPS = {
+  carton: 'Le gros bloc central coupe les tirs directs : contourne-le par les côtés. Les longs murs servent d\'abri et de rebond pour les ricochets.',
+  compact: 'Petite carte : les combats sont rapides et les ricochets partent dans tous les sens. Le bloc central est ton seul vrai abri.',
+  factory: 'Un mur central sépare les tirs en face à face : passe par le haut ou le bas. Les caisses empilées sont destructibles.',
+  corridors: 'Deux longs couloirs où les ricochets sont dangereux. Les ruines se détruisent en 6 tirs et ouvrent des raccourcis.',
+  arena: 'Grande carte avec un téléporteur haut/bas : parfait pour surprendre l\'ennemi par l\'arrière. Prends le temps de viser.',
+  bunkers: 'Un téléporteur relie le haut et le bas. Les bunkers protègent les flancs ; la caisse centrale se détruit en 3 tirs.',
+  forest: 'Beaucoup de petits obstacles, pas de longs murs : couvert partout et ricochets imprévisibles. Idéal pour les embuscades.',
+  ice: 'Sol glissant : ton char continue de glisser après avoir lâché la touche. Anticipe tes freinages près des murs.',
+  city: 'Gros immeubles solides et ruines destructibles : détruis les ruines pour ouvrir des lignes de tir.',
+  random: 'Une nouvelle carte symétrique est générée à chaque manche, avec des téléporteurs haut/bas. Adapte-toi vite !',
+};
+const MODE_TIPS = {
+  teams: 'Équipes : chaque équipe démarre sur son côté (zones colorées). Tenez vos positions et coordonnez vos tirs.',
+  br: 'Battle royale : la zone rétrécit vers le centre. Les bords deviennent dangereux, rejoins le centre tôt.',
+  koth: 'Roi de la colline : le cercle central est l\'objectif. Prends un angle de tir dessus depuis un abri.',
+  ctf: 'Capture du drapeau : les drapeaux sont près des bords. Repère les routes sans obstacle pour revenir à ta base.',
+  elim: 'Élimination : chacun pour soi avec des vies limitées. Évite les duels, laisse les autres s\'affaiblir.',
+};
+
+const mapModal = $('#mapModal'), mapZoom = $('#mapZoom');
+let modalMapId = null;
+function drawMapModal() {
+  const m = MAP_CATALOG.find(x => x.id === modalMapId);
+  if (!m) return;
+  mapZoom.height = Math.round(mapZoom.width * m.h / m.w);
+  drawMapOn(mapZoom, m, true);
+  const count = k => m.walls.filter(w => w.kind === k).length;
+  const sw = (col, txt) => `<span><i style="background:${col}"></i>${txt}</span>`;
+  $('#mapModalTitle').textContent = m.name;
+  $('#mapKicker').textContent = m.random ? 'CARTE ALÉATOIRE' : `CARTE · ${m.w} × ${m.h}`;
+  $('#mapLegend').innerHTML = m.random ? '' :
+    sw(m.theme?.wall || '#7b5b3c', `Murs (${count('wall')}) : indestructibles`) +
+    (count('crate') ? sw('#b07a43', `Caisses (${count('crate')}) : 3 tirs`) : '') +
+    (count('ruin') ? sw('#9a6a4f', `Ruines (${count('ruin')}) : 6 tirs`) : '') +
+    (m.teleporters.length ? sw('#38bdf8', 'Téléporteurs : entre par l\'un, sors par l\'autre') : '') +
+    (m.ice ? sw('#a0d7ff', 'Sol glissant') : '');
+  $('#mapTip').textContent = `${MAP_TIPS[m.id] || ''} ${MODE_TIPS[mode()] || ''}`.trim();
+  const host = !!me()?.host, current = state.map?.id === m.id, choose = $('#chooseMap');
+  choose.disabled = !host || current;
+  choose.textContent = current ? '✓ Carte actuelle' : host ? 'Choisir cette carte' : 'Seul l\'hôte peut choisir';
+}
+function openMapModal(mapId) {
+  modalMapId = mapId; drawMapModal(); mapModal.hidden = false;
+  requestAnimationFrame(() => mapModal.classList.add('visible'));
+}
+function closeMapModal() {
+  mapModal.classList.remove('visible');
+  setTimeout(() => { mapModal.hidden = true; }, 180);
+}
+$('#closeMapModal').onclick = $('#cancelMapModal').onclick = closeMapModal;
+mapModal.addEventListener('click', e => { if (e.target === mapModal) closeMapModal(); });
+addEventListener('keydown', e => { if (e.key === 'Escape' && !mapModal.hidden) closeMapModal(); });
+$('#chooseMap').onclick = () => { if (modalMapId) send({ type: 'map', mapId: modalMapId }); closeMapModal(); };
+
+let previewSignature = '';
+function buildMapGallery() {
+  mapGallery.innerHTML = MAP_CATALOG.map(m => `<button type="button" class="map-tile" data-map="${m.id}"><canvas width="480" height="280"></canvas><span class="zoom">🔍 Agrandir</span><div><b>${escapeHtml(m.name)}</b><small>${m.random ? 'Générée à chaque manche' : `${m.w}×${m.h}`}${m.ice ? ' · glissante' : ''}${m.teleporters.length ? ' · téléporteurs' : ''}</small></div></button>`).join('');
+  mapGallery.querySelectorAll('.map-tile').forEach((tile, i) => { drawMapOn(tile.querySelector('canvas'), MAP_CATALOG[i]); tile.onclick = () => openMapModal(MAP_CATALOG[i].id); });
+  previewSignature = ''; renderMapPreview();
+}
+// Met en évidence la carte choisie (et rafraîchit la vue agrandie si elle est ouverte).
+function renderMapPreview() {
+  const signature = `${state.map?.id}-${state.gameMode}-${me()?.host}`;
+  if (signature === previewSignature) return;
+  previewSignature = signature;
+  mapGallery.querySelectorAll('.map-tile').forEach(t => t.classList.toggle('active', t.dataset.map === state.map?.id));
+  if (!mapModal.hidden) drawMapModal();
 }
 
 // =============================================================================
@@ -435,6 +664,7 @@ function onState(m) {
   if (playing && wasHidden) { nameEl.blur(); c.focus(); requestAnimationFrame(fitArena); }
   if (playing && arenaWrap.dataset.shown !== '1' && !arenaWrap.hidden) requestAnimationFrame(fitArena);
   arenaWrap.dataset.shown = playing && !arenaWrap.hidden ? '1' : '0';
+  updateTouchVisibility();
 }
 
 function connect() {
@@ -516,7 +746,7 @@ const controlKeys = new Set(['z', 'q', 's', 'd', ' ', 'e', 'f']);
 function key(e) { const k = (e.key || '').toLowerCase(); return KEY_ALIASES[k] || k; }
 function typingInField(e) { const t = e.target; return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT'); }
 
-let previous = '', minePressed = false, tpPressed = false;
+let previous = '', minePressed = false, tpPressed = false, aimCur = null, aimAt = performance.now();
 addEventListener('keydown', e => {
   if (e.key === 'Tab' && !game.hidden) { e.preventDefault(); tabHeld = true; renderScores(); return; }
   if (typingInField(e)) return; // permet d'écrire Z, Q, S, D ou espace dans le pseudo
@@ -547,8 +777,18 @@ setInterval(() => {
   const input = { f: !!keys.z, b: !!keys.s, l: !!keys.q, r: !!keys.d, shoot: !!keys[' '] || (mouseAim && mouseDown), mine: !!keys.e || minePressed, tp: !!keys.f || tpPressed };
   if (mouseAim && mouseWorld) {
     const t = state.tanks.find(tk => tk.id === id);
-    if (t) input.aim = Math.round(Math.atan2(mouseWorld.y - t.y, mouseWorld.x - t.x) * 100) / 100;
-  }
+    if (t) {
+      const target = Math.atan2(mouseWorld.y - t.y, mouseWorld.x - t.x), now = performance.now();
+      if (aimCur === null || aimSens >= 10) aimCur = target;
+      else {
+        const step = aimSens * 1.5 * Math.min(0.1, (now - aimAt) / 1000);   // rad/s : de 1,5 à 13,5
+        const d = ((target - aimCur + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+        aimCur += Math.max(-step, Math.min(step, d));
+      }
+      aimAt = now;
+      input.aim = Math.round(aimCur * 100) / 100;
+    }
+  } else aimCur = null;
   const encoded = JSON.stringify(input), active = input.f || input.b || input.l || input.r || input.shoot || input.mine || input.tp;
   if (encoded !== previous || active) { send({ type: 'input', input }); previous = encoded; minePressed = false; tpPressed = false; }
 }, 16);
@@ -1509,7 +1749,7 @@ function sfx(name, vol = 1) {
   const t = audioCtx.currentTime;
   if (sfxLast[name] && t - sfxLast[name] < 0.035) return;   // évite la cacophonie (tir x5, rafales)
   sfxLast[name] = t;
-  try { SOUNDS[name]?.(t, vol); } catch (_) {}
+  try { SOUNDS[name]?.(t, vol * soundVolume / 0.7); } catch (_) {}
 }
 
 
@@ -1517,3 +1757,266 @@ loadScreamerImage();
 buildClassPicker();
 connect();
 draw();
+
+// =============================================================================
+// Écran d'accueil : panorama animé de la carte + char qui tourne sur lui-même
+// =============================================================================
+
+(function intro() {
+  const root = $('#intro'), bg = $('#introCanvas'), playBtn = $('#introPlay');
+  const bctx = bg.getContext('2d');
+
+  // Fond : monde infini fait de tuiles ; les caisses sont tirées au hasard, sauf sur les « routes » où roulent les chars.
+  const TILE = 90, LANE_H = 6, LANE_V = 8;
+  const hash = (i, j) => { let h = (Math.imul(i, 374761393) + Math.imul(j, 668265263)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+  const mod = (a, n) => ((a % n) + n) % n;
+  const palette = ['#ffd24d', '#75d8ff', '#f87171', '#a3e635', '#c084fc'];
+  const WRAP = 2600;
+  const rovers = [
+    { lane: 'h', idx: 0, speed: 150, off: 0, color: 0, cls: 'light' },
+    { lane: 'h', idx: 1, speed: -110, off: 900, color: 1, cls: 'heavy' },
+    { lane: 'h', idx: 1, speed: 190, off: 1700, color: 4, cls: 'sniper' },
+    { lane: 'v', idx: 0, speed: 130, off: 300, color: 2, cls: 'sniper' },
+    { lane: 'v', idx: 1, speed: -170, off: 1500, color: 3, cls: 'light' },
+  ].map(r => ({ ...r, shots: [], nextShot: 1 + Math.random() * 2 }));
+  let W = 0, H = 0, running = true, last = performance.now(), t = 0;
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    W = root.clientWidth; H = root.clientHeight;
+    bg.width = Math.ceil(W * dpr); bg.height = Math.ceil(H * dpr);
+    bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  addEventListener('resize', resize); resize();
+
+  function drawCrateSimple(g, px, py, s) {
+    g.fillStyle = 'rgba(0,0,0,.28)'; g.fillRect(px + 5, py + 7, s, s);
+    g.fillStyle = '#b8823f'; g.fillRect(px, py, s, s);
+    g.fillStyle = '#cf9a55'; g.fillRect(px + 3, py + 3, s - 6, s - 6);
+    g.strokeStyle = '#7c5426'; g.lineWidth = 3; g.strokeRect(px + 1.5, py + 1.5, s - 3, s - 3);
+    g.lineWidth = 2; g.beginPath(); g.moveTo(px + 6, py + 6); g.lineTo(px + s - 6, py + s - 6); g.moveTo(px + s - 6, py + 6); g.lineTo(px + 6, py + s - 6); g.stroke();
+  }
+
+  function drawWorld(camX, camY) {
+    bctx.fillStyle = '#18241b'; bctx.fillRect(0, 0, W, H);
+    const i0 = Math.floor(camX / TILE), j0 = Math.floor(camY / TILE);
+    const nx = Math.ceil(W / TILE) + 1, ny = Math.ceil(H / TILE) + 1;
+    for (let j = j0; j < j0 + ny; j++) for (let i = i0; i < i0 + nx; i++) {
+      const px = i * TILE - camX, py = j * TILE - camY;
+      if ((i + j) & 1) { bctx.fillStyle = 'rgba(255,255,255,.025)'; bctx.fillRect(px, py, TILE, TILE); }
+      const lane = mod(j, LANE_H) === 0 || mod(i, LANE_V) === 0;
+      if (lane) { bctx.fillStyle = 'rgba(0,0,0,.16)'; bctx.fillRect(px, py, TILE, TILE); continue; }
+      if (hash(i, j) < 0.2) drawCrateSimple(bctx, px + 14, py + 14, TILE - 28);
+    }
+  }
+
+  function drawRover(r, camX, camY, dt) {
+    const dir = Math.sign(r.speed), along = r.speed * t + r.off;
+    let sx, sy, ang;
+    if (r.lane === 'h') {   // route horizontale : une ligne toutes les 6 tuiles
+      sx = mod(along - camX + 300, WRAP) - 300;
+      sy = mod(r.idx * LANE_H * TILE - camY + TILE, 2 * LANE_H * TILE) - TILE + TILE / 2;
+      ang = dir > 0 ? 0 : Math.PI;
+    } else {                // route verticale : une colonne toutes les 8 tuiles
+      sy = mod(along - camY + 300, WRAP) - 300;
+      sx = mod(r.idx * LANE_V * TILE - camX + TILE, 2 * LANE_V * TILE) - TILE + TILE / 2;
+      ang = dir > 0 ? Math.PI / 2 : -Math.PI / 2;
+    }
+    r.nextShot -= dt;
+    if (r.nextShot <= 0) {
+      if (sx > 0 && sx < W && sy > 0 && sy < H) r.shots.push({ x: sx + Math.cos(ang) * 40, y: sy + Math.sin(ang) * 40, a: ang, age: 0 });
+      r.nextShot = 2 + Math.random() * 3;
+    }
+    for (const s of r.shots) { s.age += dt; s.x += Math.cos(s.a) * 460 * dt - camVX * dt; s.y += Math.sin(s.a) * 460 * dt - camVY * dt; }
+    r.shots = r.shots.filter(s => s.age < 1.6);
+    for (const s of r.shots) {
+      bctx.fillStyle = '#fff3b0'; bctx.shadowColor = '#ffd24d'; bctx.shadowBlur = 12;
+      bctx.beginPath(); bctx.arc(s.x, s.y, 5, 0, 7); bctx.fill(); bctx.shadowBlur = 0;
+    }
+    if (sx < -80 || sx > W + 80 || sy < -80 || sy > H + 80) return;
+    bctx.save(); bctx.translate(sx, sy); bctx.scale(1.5, 1.5); bctx.rotate(ang);
+    drawTankShape(bctx, r.cls, palette[r.color], 0);
+    bctx.restore();
+  }
+
+  let camVX = 22, camVY = 11;
+  function frame(now) {
+    if (!running) return;
+    const dt = Math.min(0.05, (now - last) / 1000); last = now; t += dt;
+    const camX = t * camVX, camY = t * camVY + Math.sin(t * 0.2) * 20;
+    drawWorld(camX, camY);
+    for (const r of rovers) drawRover(r, camX, camY, dt);
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  function enter() {
+    if (root.classList.contains('leaving')) return;
+    root.classList.add('leaving');
+    setTimeout(() => { running = false; root.hidden = true; removeEventListener('keydown', onKey, true); }, 650);
+  }
+  function onKey(e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); enter(); }
+  }
+  addEventListener('keydown', onKey, true);
+  playBtn.onclick = enter;
+  playBtn.focus();
+
+  // Raccourci de développement : index.html#lobby (ou #lobby:match) saute l'accueil.
+  const skip = location.hash.match(/^#lobby(?::(\w+))?$/);
+  if (skip) { running = false; root.hidden = true; if (skip[1]) document.querySelector(`[data-tab="${skip[1]}"]`)?.click(); }
+})();
+
+
+// =============================================================================
+// Boutons tactiles (tablette)
+// =============================================================================
+
+function updateTouchVisibility() {
+  const el = $('#touchControls');
+  el.hidden = !(touchCfg.on && !game.hidden && upgradePanel.hidden);
+}
+const touchCfg = (() => {
+  const el = $('#touchControls'), preview = $('#touchPreview');
+  const coarse = matchMedia('(pointer: coarse)').matches;
+  const cfg = { on: pref('touch', coarse ? 'on' : 'off') === 'on', size: Number(pref('touchSize', 100)), opacity: Number(pref('touchOpacity', 70)), swap: pref('touchSwap', 'off') === 'on' };
+  const markup = `
+    <div class="tc-group tc-move">
+      <button class="tc-btn tc-up" data-tk="z" aria-label="Avancer">▲</button>
+      <button class="tc-btn tc-left" data-tk="q" aria-label="Tourner à gauche">◀</button>
+      <button class="tc-btn tc-down" data-tk="s" aria-label="Reculer">▼</button>
+      <button class="tc-btn tc-right" data-tk="d" aria-label="Tourner à droite">▶</button>
+    </div>
+    <div class="tc-group tc-act">
+      <button class="tc-btn tc-small tc-e" data-tk="e" aria-label="Poser une mine">💣</button>
+      <button class="tc-btn tc-small tc-f" data-tk="f" aria-label="Téléport">🌀</button>
+      <button class="tc-btn tc-small tc-tab" data-tk="tab" aria-label="Scores">🏆</button>
+      <button class="tc-btn tc-fire" data-tk=" " aria-label="Tirer">FEU</button>
+    </div>`;
+  el.innerHTML = markup;
+  preview.innerHTML = `<div class="touch-controls">${markup}</div>`;
+  preview.querySelectorAll('button').forEach(b => b.tabIndex = -1);
+
+  const press = k => {
+    if (k === 'e') minePressed = true;
+    else if (k === 'f') tpPressed = true;
+    else if (k === 'tab') { tabHeld = true; renderScores(); }
+    else keys[k] = true;
+  };
+  const release = k => {
+    if (k === 'tab') { tabHeld = false; renderScores(); }
+    else if (k !== 'e' && k !== 'f') keys[k] = false;
+  };
+  el.addEventListener('pointerdown', e => {
+    const b = e.target.closest('[data-tk]'); if (!b) return;
+    e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add('down'); press(b.dataset.tk);
+  });
+  const up = e => { const b = e.target.closest('[data-tk]'); if (!b) return; b.classList.remove('down'); release(b.dataset.tk); };
+  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+  el.addEventListener('contextmenu', e => e.preventDefault());
+
+  const toggle = $('#touchToggle'), size = $('#touchSize'), opacity = $('#touchOpacity'), swap = $('#touchSwap');
+  function apply() {
+    document.documentElement.style.setProperty('--ts', cfg.size / 100);
+    document.documentElement.style.setProperty('--to', cfg.opacity / 100);
+    document.querySelectorAll('.touch-controls').forEach(t => t.classList.toggle('swap', cfg.swap));
+    toggle.checked = cfg.on; size.value = cfg.size; opacity.value = cfg.opacity; swap.checked = cfg.swap;
+    $('#touchSizeVal').textContent = `${cfg.size} %`; $('#touchOpacityVal').textContent = `${cfg.opacity} %`;
+    document.body.classList.toggle('touch-mode', cfg.on);
+    el.hidden = !(cfg.on && !game.hidden && upgradePanel.hidden);
+  }
+  const save = () => { savePref('touch', cfg.on ? 'on' : 'off'); savePref('touchSize', cfg.size); savePref('touchOpacity', cfg.opacity); savePref('touchSwap', cfg.swap ? 'on' : 'off'); apply(); };
+  toggle.onchange = () => { cfg.on = toggle.checked; save(); };
+  size.oninput = () => { cfg.size = Number(size.value); save(); };
+  opacity.oninput = () => { cfg.opacity = Number(opacity.value); save(); };
+  swap.onchange = () => { cfg.swap = swap.checked; save(); };
+  $('#touchReset').onclick = () => { Object.assign(cfg, { size: 100, opacity: 70, swap: false }); save(); };
+  $('#touchHint').textContent = coarse ? 'Écran tactile détecté : activé par défaut.' : 'Prévu pour les tablettes et téléphones.';
+  apply();
+  return cfg;
+})();
+
+
+// =============================================================================
+// Illustrations des modes de jeu (cartes de l'onglet Partie)
+// =============================================================================
+
+const artTank = (g, cls, col, x, y, ang, k = 1.7) => { g.save(); g.translate(x, y); g.rotate(ang); g.scale(k, k); drawTankShape(g, cls, col, 0, col); g.restore(); };
+function artGrid(g, w, h) {
+  g.strokeStyle = 'rgba(255,255,255,.05)'; g.lineWidth = 1; g.beginPath();
+  for (let gx = 0; gx < w; gx += 32) { g.moveTo(gx, 0); g.lineTo(gx, h); }
+  for (let gy = 0; gy < h; gy += 32) { g.moveTo(0, gy); g.lineTo(w, gy); }
+  g.stroke();
+}
+function artFlag(g, x, y, col) {
+  g.strokeStyle = '#e5e7eb'; g.lineWidth = 3; g.beginPath(); g.moveTo(x, y); g.lineTo(x, y - 52); g.stroke();
+  g.fillStyle = col; g.beginPath(); g.moveTo(x, y - 52); g.lineTo(x + 34, y - 41); g.lineTo(x, y - 30); g.closePath(); g.fill();
+}
+const MODE_ART = {
+  teams(g, w, h) {
+    g.fillStyle = 'rgba(241,206,92,.1)'; g.fillRect(0, 0, w * 0.32, h); g.fillStyle = 'rgba(131,210,246,.1)'; g.fillRect(w * 0.68, 0, w * 0.32, h);
+    g.fillStyle = '#7b5b3c'; g.fillRect(w / 2 - 14, h * 0.28, 28, h * 0.44);
+    artTank(g, 'light', '#f1ce5c', w * 0.17, h * 0.34, 0.2); artTank(g, 'heavy', '#f1ce5c', w * 0.2, h * 0.7, -0.15);
+    artTank(g, 'sniper', '#83d2f6', w * 0.83, h * 0.32, Math.PI - 0.2); artTank(g, 'light', '#83d2f6', w * 0.8, h * 0.7, Math.PI + 0.15);
+  },
+  br(g, w, h) {
+    g.setLineDash([8, 7]); g.lineWidth = 3;
+    [[0.62, 0.35], [0.42, 0.7], [0.24, 1]].forEach(([r, a]) => { g.strokeStyle = `rgba(248,113,113,${a})`; g.beginPath(); g.arc(w / 2, h / 2, h * r, 0, 7); g.stroke(); });
+    g.setLineDash([]);
+    ['#f87171', '#a3e635', '#c084fc', '#75d8ff', '#fb923c'].forEach((c, i) => { const a = i * 1.26 + 0.4; artTank(g, 'light', c, w / 2 + Math.cos(a) * h * 0.42, h / 2 + Math.sin(a) * h * 0.32, a + Math.PI, 1.2); });
+    artTank(g, 'heavy', '#ffd24d', w / 2, h / 2, 0.3, 1.3);
+  },
+  koth(g, w, h) {
+    g.fillStyle = 'rgba(216,239,90,.14)'; g.strokeStyle = '#d8ef5a'; g.lineWidth = 3; g.beginPath(); g.arc(w / 2, h / 2, h * 0.36, 0, 7); g.fill(); g.stroke();
+    artTank(g, 'heavy', '#f1ce5c', w / 2 - 12, h / 2 + 4, -0.4, 1.5);
+    artTank(g, 'light', '#83d2f6', w * 0.14, h * 0.25, 0.4); artTank(g, 'sniper', '#83d2f6', w * 0.86, h * 0.78, Math.PI + 0.5);
+    g.fillStyle = '#d8ef5a'; g.font = '900 18px system-ui'; g.textAlign = 'center'; g.fillText('⛰', w / 2 + 40, h / 2 - 28);
+  },
+  ctf(g, w, h) {
+    g.fillStyle = 'rgba(241,206,92,.1)'; g.fillRect(0, 0, w * 0.22, h); g.fillStyle = 'rgba(131,210,246,.1)'; g.fillRect(w * 0.78, 0, w * 0.22, h);
+    artFlag(g, w * 0.1, h * 0.68, '#f1ce5c'); artFlag(g, w * 0.9, h * 0.68, '#83d2f6');
+    artTank(g, 'light', '#f1ce5c', w * 0.62, h * 0.6, 0, 1.6); artFlag(g, w * 0.62 - 4, h * 0.6, '#83d2f6');
+  },
+  elim(g, w, h) {
+    g.fillStyle = '#f87171'; g.font = '900 30px system-ui'; g.textAlign = 'center'; g.fillText('♥ ♥ ♥', w / 2, h * 0.3);
+    artTank(g, 'heavy', '#a3e635', w * 0.3, h * 0.68, -0.3, 1.5); artTank(g, 'light', '#c084fc', w * 0.7, h * 0.68, Math.PI + 0.3, 1.5);
+    g.fillStyle = '#fff'; g.font = '28px system-ui'; g.fillText('💥', w / 2, h * 0.7);
+  },
+};
+document.querySelectorAll('.mode-card').forEach(btn => {
+  const cv = btn.querySelector('canvas'), g = cv.getContext('2d');
+  artGrid(g, cv.width, cv.height); MODE_ART[btn.dataset.mode]?.(g, cv.width, cv.height);
+});
+
+// =============================================================================
+// Ambiance du lobby : poussière, fumée, faisceaux (arrêtée quand le lobby n'est pas visible)
+// =============================================================================
+
+(function lobbyFx() {
+  const cv = $('#lobbyFx'), g = cv.getContext('2d'), still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const motes = Array.from({ length: 70 }, () => ({ x: Math.random(), y: Math.random(), r: 0.6 + Math.random() * 1.8, v: 0.008 + Math.random() * 0.025, a: 0.15 + Math.random() * 0.4, p: Math.random() * 6 }));
+  const smoke = Array.from({ length: 7 }, () => ({ x: Math.random(), y: 0.5 + Math.random() * 0.6, r: 0.18 + Math.random() * 0.22, v: 0.004 + Math.random() * 0.009, p: Math.random() * 6 }));
+  let last = 0;
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (still || lobby.hidden || !$('#intro').hidden || document.hidden || now - last < 33) return;
+    last = now;
+    const w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) return;
+    if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+    g.clearRect(0, 0, w, h);
+    const t = now / 1000;
+    for (const s of smoke) {   // fumée : gros halos chauds qui dérivent lentement
+      const x = ((s.x + t * s.v) % 1.4 - 0.2) * w, y = s.y * h + Math.sin(t * 0.3 + s.p) * 20, r = s.r * Math.max(w, h);
+      const grad = g.createRadialGradient(x, y, 0, x, y, r);
+      grad.addColorStop(0, 'rgba(210,190,150,.07)'); grad.addColorStop(1, 'rgba(210,190,150,0)');
+      g.fillStyle = grad; g.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    for (const m of motes) {   // poussière en suspension
+      const x = ((m.x + t * m.v * 0.6 + Math.sin(t * 0.5 + m.p) * 0.01) % 1 + 1) % 1 * w, y = (((m.y - t * m.v) % 1) + 1) % 1 * h;
+      g.fillStyle = `rgba(255,236,190,${m.a * (0.6 + 0.4 * Math.sin(t * 1.3 + m.p))})`; g.beginPath(); g.arc(x, y, m.r, 0, 7); g.fill();
+    }
+  }
+  requestAnimationFrame(frame);
+})();

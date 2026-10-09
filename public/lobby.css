@@ -1,0 +1,168 @@
+/* =============================================================================
+   Lobby « jeu vidéo » : barre du haut, navigation, scène du tank, joueurs, lancement
+   (chargé après style.css : surcharge les anciennes règles du lobby)
+   ============================================================================= */
+:root{
+  --amber:#f0c46e;--amber-d:#b98a35;--lime:#d8ef5a;--ink:#0b110d;
+  --glass:rgba(14,20,16,.74);--glass-2:rgba(24,33,27,.78);--stroke:rgba(255,255,255,.1);
+  --display:Bahnschrift,"DIN Condensed","Segoe UI",system-ui,sans-serif;
+}
+
+/* Le lobby occupe tout l'écran : l'ancien en-tête n'apparaît qu'en partie. */
+main:has(#lobby:not([hidden])){width:min(1760px,100%);padding:12px 16px;gap:0}
+main:has(#lobby:not([hidden])) > header{display:none}
+body{background:radial-gradient(ellipse at 50% 0,#1d2c20 0,#0a100c 62%)}
+
+#lobby.lobby:not([hidden]){
+  position:relative;display:grid!important;margin:0!important;padding:0!important;overflow:hidden!important;width:100%;
+  grid-template-columns:168px minmax(0,1fr) 330px;grid-template-rows:auto minmax(0,1fr) auto;
+  grid-template-areas:"top top top" "rail center side" "bar bar bar";gap:14px;
+  animation:lobbyIn .5s ease-out both;
+}
+@keyframes lobbyIn{from{opacity:0;transform:scale(.985)}to{opacity:1;transform:none}}
+.lobby-fx{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
+#lobby > :not(.lobby-fx){position:relative;z-index:1}
+
+/* ---------- Barre du haut ---------- */
+.lb-top{grid-area:top;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:10px 16px;border:1px solid var(--stroke);border-left:4px solid var(--amber);border-radius:6px 18px 6px 18px;background:var(--glass);backdrop-filter:blur(10px)}
+.lb-logo{display:flex;align-items:center;gap:12px}
+.lb-logo b{display:block;color:var(--amber);font:900 24px/1 var(--display);letter-spacing:.08em;text-shadow:0 2px 0 #5a3f10}
+.lb-logo small{color:#8d9a91;font-size:11px;letter-spacing:.2em;text-transform:uppercase}
+.lb-top-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.chip{display:inline-flex;align-items:center;gap:8px;padding:8px 13px;border:1px solid var(--stroke);border-radius:999px;background:rgba(255,255,255,.05);color:#d6ded8;font-size:12px;font-weight:700;white-space:nowrap}
+.chip b{font-weight:800}
+.chip-join{cursor:pointer;color:var(--lime);transition:.15s}.chip-join:hover{background:rgba(216,239,90,.1);border-color:rgba(216,239,90,.5)}
+.chip-user{padding-right:6px}
+.user-dot{width:12px;height:12px;border-radius:50%;background:var(--lime);box-shadow:0 0 0 2px #0006}
+.badge{padding:4px 9px;border-radius:999px;background:rgba(255,255,255,.1);color:#cbd5ce;font-style:normal;font-size:10px;font-weight:900;letter-spacing:.1em}
+.badge.host{background:linear-gradient(180deg,#ffe07a,#e0a82e);color:#2b1d00}
+
+/* ---------- Navigation ---------- */
+.rail{grid-area:rail;display:flex;flex-direction:column;gap:10px;padding:10px;border:1px solid var(--stroke);border-radius:6px 18px 6px 18px;background:var(--glass);backdrop-filter:blur(10px);align-self:start}
+.rail-btn{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px 8px 12px;border:1px solid transparent;border-radius:4px 14px 4px 14px;background:transparent;color:#a9b5ad;font:800 14px/1 var(--display);letter-spacing:.12em;text-transform:uppercase;transition:.18s}
+.rail-btn i{font-style:normal;font-size:28px;filter:grayscale(.5);transition:.2s}
+.rail-btn:hover{background:rgba(255,255,255,.07);color:#fff;transform:translateX(3px)}
+.rail-btn:hover i{filter:none;transform:scale(1.12)}
+.rail-btn.active{background:linear-gradient(135deg,rgba(216,239,90,.95),rgba(170,200,50,.95));color:#141a08;box-shadow:0 8px 24px rgba(216,239,90,.18)}
+.rail-btn.active i{filter:none}
+.rail-btn .tab-count{position:absolute;top:8px;right:8px;min-width:22px;padding:2px 6px;border-radius:999px;background:rgba(0,0,0,.45);color:#fff;font:800 11px/1.4 system-ui;letter-spacing:0}
+.rail-btn.active .tab-count{background:rgba(0,0,0,.25);color:#141a08}
+
+/* ---------- Centre : scène du tank + panneaux ---------- */
+.center{grid-area:center;display:flex;flex-direction:column;gap:12px;min-height:0;min-width:0}
+.stage{position:relative;flex:1 1 0;min-height:200px;overflow:hidden;border:1px solid var(--stroke);border-radius:6px 24px 6px 24px;background:
+  radial-gradient(ellipse at 50% 62%,rgba(240,196,110,.2),transparent 55%),
+  linear-gradient(180deg,rgba(18,26,20,.55),rgba(10,15,12,.75));backdrop-filter:blur(6px);transition:flex-basis .35s ease,flex-grow .35s ease}
+.stage::before,.stage::after{content:"";position:absolute;top:-20%;width:26%;height:140%;pointer-events:none;opacity:.5;background:linear-gradient(180deg,rgba(255,236,170,.2),transparent 70%);transform-origin:50% 0}
+.stage::before{left:14%;transform:rotate(14deg);animation:beam 7s ease-in-out infinite alternate}
+.stage::after{right:14%;transform:rotate(-14deg);animation:beam 9s ease-in-out infinite alternate-reverse}
+@keyframes beam{from{opacity:.25;transform:rotate(10deg)}to{opacity:.6;transform:rotate(18deg)}}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.stage-info{position:absolute;left:24px;top:18px;display:flex;flex-direction:column;gap:2px;pointer-events:none;text-shadow:0 3px 14px #000}
+.stage-info small{color:var(--amber);font:800 11px/1 var(--display);letter-spacing:.3em}
+.stage-info b{max-width:42vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff;font:900 clamp(26px,4vw,54px)/1.05 var(--display);font-style:italic;letter-spacing:.03em;text-transform:uppercase}
+.stage-info span{color:var(--lime);font:800 15px/1.2 var(--display);letter-spacing:.14em;text-transform:uppercase}
+.lobby:not(.view-player) .stage{flex:0 0 138px;min-height:0}
+.lobby:not(.view-player) .stage-info b{font-size:30px}
+.lobby:not(.view-player) .stage::before,.lobby:not(.view-player) .stage::after{display:none}
+
+.tab-panels{flex:0 1 auto;min-height:0;overflow-y:auto;padding:0 4px 2px 0}
+.lobby:not(.view-player) .tab-panels{flex:1 1 auto}
+.tab-panel.active{animation:panelIn .28s cubic-bezier(.2,.8,.2,1)}
+@keyframes panelIn{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}
+#lobby .panel-card,#lobby .class-picker{border:1px solid var(--stroke);border-radius:6px 18px 6px 18px;background:var(--glass-2);backdrop-filter:blur(8px);box-shadow:none}
+#lobby .eyebrow{color:var(--amber);font:800 12px/1 var(--display);letter-spacing:.22em}
+
+/* ---------- Tank / Joueur ---------- */
+.player-dock{display:grid;grid-template-columns:minmax(230px,300px) minmax(0,1fr);gap:12px;align-items:stretch}
+.player-dock .panel-card,.player-dock .class-picker{margin:0}
+.player-dock .name-card{display:block}
+.player-dock .name-field input{height:46px}
+.color-picker{grid-template-columns:repeat(8,22px)!important;gap:7px!important}
+.color-picker button{width:22px!important;height:22px!important;transition:transform .12s}.color-picker button:hover{transform:scale(1.2)}
+.player-dock .class-picker{padding:12px 14px}
+.player-dock .class-picker-head{margin-bottom:8px}
+.player-dock .class-grid{gap:10px}
+.player-dock .class-card{padding:10px 12px 12px;border-radius:4px 14px 4px 14px}
+.player-dock .class-card>b{font:900 20px/1.1 var(--display);letter-spacing:.08em;text-transform:uppercase}
+.player-dock .class-card canvas{aspect-ratio:220/110;margin:4px 0}
+.player-dock .class-card p{min-height:0;margin-bottom:6px;font-size:11px}
+.player-dock .class-card.active{border-color:var(--lime);background:rgba(216,239,90,.1);box-shadow:0 0 0 3px rgba(216,239,90,.12),0 10px 30px rgba(0,0,0,.3)}
+.player-dock .class-card.active::after{margin-top:8px;font-size:11px}
+
+/* ---------- Partie : cartes de modes ---------- */
+.mode-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px}
+.mode-card{display:flex;flex-direction:column;align-items:stretch;gap:5px;padding:8px 8px 12px;border:1px solid var(--stroke);border-radius:4px 16px 4px 16px;background:rgba(255,255,255,.04);color:var(--text,#f4f7f5);text-align:left;transition:.18s}
+.mode-card .mode-art{width:100%;height:auto;aspect-ratio:320/170;border-radius:3px 11px 3px 11px;background:linear-gradient(145deg,#1f2d22,#101712);transition:.3s}
+.mode-card b{padding:6px 4px 0;font:900 17px/1 var(--display);letter-spacing:.07em;text-transform:uppercase}
+.mode-card small{padding:0 4px;color:#8e9b93;font-size:11px;line-height:1.4}
+.mode-card:hover:not(:disabled){transform:translateY(-4px);border-color:rgba(216,239,90,.5);box-shadow:0 14px 28px rgba(0,0,0,.35)}
+.mode-card:hover:not(:disabled) .mode-art{filter:brightness(1.2)}
+.mode-card.active{border-color:var(--lime);background:rgba(216,239,90,.1);box-shadow:0 0 0 3px rgba(216,239,90,.14)}
+.mode-card.active b{color:var(--lime)}
+.mode-card:disabled{cursor:not-allowed;opacity:.62}.mode-card.active:disabled{opacity:1}
+#lobby .br-banner{margin:14px 0 0;border-left:4px solid var(--lime);border-radius:4px 12px 4px 12px}
+
+/* Bonus */
+.power-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:10px}
+.power-card{position:relative;display:grid;grid-template-columns:34px 1fr;grid-template-rows:auto auto;column-gap:10px;align-items:center;padding:10px 12px;border:1px solid color-mix(in srgb,var(--chip) 40%,transparent);border-radius:4px 12px 4px 12px;background:rgba(255,255,255,.03);color:#8d9a92;text-align:left;opacity:.55;transition:.16s}
+.power-card i{grid-row:1/3;display:grid;place-items:center;width:34px;height:34px;border-radius:9px;background:color-mix(in srgb,var(--chip) 18%,transparent);font-style:normal;font-size:18px}
+.power-card b{font-size:13px;color:#e7ece8}.power-card small{font-size:10px;line-height:1.3;color:#8d9a92}
+.power-card .pc-state{position:absolute;top:6px;right:8px;font-size:9px;font-weight:900;letter-spacing:.1em;color:#6f7b73}
+.power-card.on{opacity:1;background:color-mix(in srgb,var(--chip) 16%,rgba(255,255,255,.03));border-color:var(--chip)}
+.power-card.on .pc-state{color:var(--lime)}
+.power-card:hover:not(:disabled){transform:translateY(-2px);opacity:1}
+.power-card:disabled{cursor:not-allowed}
+
+/* Galerie de cartes plus compacte dans la colonne centrale */
+#lobby .map-gallery{grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}
+#lobby .map-tile{border-radius:4px 14px 4px 14px}
+
+/* ---------- Joueurs (colonne de droite) ---------- */
+.side{grid-area:side;display:flex;flex-direction:column;gap:10px;min-height:0;padding:14px;border:1px solid var(--stroke);border-radius:6px 22px 6px 22px;background:var(--glass);backdrop-filter:blur(10px)}
+.side-head{display:flex;align-items:center;gap:10px}
+.side-head h2{margin:0;color:var(--amber);font:900 18px/1 var(--display);letter-spacing:.2em}
+.side-bot{margin-left:auto}.side-bot button{padding:7px 12px;border:1px solid rgba(131,210,246,.4);border-radius:4px 10px 4px 10px;background:rgba(131,210,246,.1);color:#bfe8fb;font:800 12px/1 var(--display);letter-spacing:.1em;transition:.15s}.side-bot button:hover{background:rgba(131,210,246,.22)}
+.live-roster{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-right:3px;scrollbar-width:thin;scrollbar-color:#3a463d transparent}
+.side-group h3{display:flex;align-items:center;gap:8px;margin:0 0 7px;color:#aab6ae;font:800 12px/1 var(--display);letter-spacing:.16em;text-transform:uppercase}
+.side-group h3 em{margin-left:auto;font-style:normal;color:#fff;background:rgba(0,0,0,.35);padding:2px 8px;border-radius:999px}
+.side-group .roster-item{margin-bottom:6px}
+.side-group .empty-team{padding:12px 8px;font-size:12px}
+
+/* Cartes de joueurs (colonne de droite + section Lobby) */
+#lobby .roster-item{grid-template-columns:50px 1fr auto!important;min-height:58px;border-radius:4px 12px 4px 12px!important;position:relative;overflow:hidden}
+#lobby .roster-item::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ring,#fff3)}
+#lobby .roster-avatar{width:50px!important;height:40px!important;border-radius:6px!important;background:radial-gradient(circle,#2b3a2f,#121a14)!important;box-shadow:inset 0 0 0 2px var(--ring,transparent)!important;overflow:hidden}
+#lobby .roster-avatar img{display:block;width:100%;height:100%;object-fit:contain}
+#lobby .roster-item b{font-size:14px}
+.crown{margin-right:4px;font-style:normal}
+.bot-tag{margin-left:6px;padding:1px 6px;border-radius:6px;background:rgba(167,139,250,.2);color:#c4b5fd;font-size:9px;font-weight:900;letter-spacing:.08em;vertical-align:middle}
+
+/* ---------- Barre de lancement ---------- */
+.lb-bar{grid-area:bar;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:12px 18px;border:1px solid var(--stroke);border-left:4px solid var(--lime);border-radius:6px 22px 6px 22px;background:var(--glass);backdrop-filter:blur(10px)}
+.lb-state p{margin:0 0 8px;color:#e9efea;font-size:14px;font-weight:700}
+.lb-chips{display:flex;gap:8px;flex-wrap:wrap}.lb-chips .chip{padding:5px 11px;font-size:11px}
+#lobby #start.launch{position:relative;display:inline-flex;align-items:center;gap:16px;min-width:300px;justify-content:center;padding:18px 36px;border:0;background:linear-gradient(180deg,#e8f87a,#bcd93a);color:#121808;font:900 24px/1 var(--display);font-style:italic;letter-spacing:.1em;clip-path:polygon(14px 0,100% 0,calc(100% - 14px) 100%,0 100%);box-shadow:0 0 0 1px #0006;cursor:pointer;transition:.15s;filter:drop-shadow(0 10px 18px rgba(184,214,50,.3))}
+#lobby #start.launch i{font-style:normal;font-size:18px;transition:transform .2s}
+#lobby #start.launch:hover:not(:disabled){filter:brightness(1.1) drop-shadow(0 12px 24px rgba(216,239,90,.45));transform:translateY(-2px)}
+#lobby #start.launch:hover:not(:disabled) i{transform:translateX(6px)}
+#lobby #start.launch:active:not(:disabled){transform:translateY(2px)}
+#lobby #start.launch:not(:disabled){animation:launchPulse 2.2s ease-in-out infinite}
+@keyframes launchPulse{0%,100%{box-shadow:0 0 0 1px #0006}50%{box-shadow:0 0 0 1px #0006,0 0 40px rgba(216,239,90,.55)}}
+#lobby #start.launch:disabled{background:linear-gradient(180deg,#4a5240,#3a4132);color:#8b9582;cursor:not-allowed;filter:none}
+
+/* ---------- Responsive ---------- */
+@media(max-width:1280px){#lobby.lobby:not([hidden]){grid-template-columns:130px minmax(0,1fr) 280px}.rail-btn{font-size:12px;padding:12px 4px 10px}.player-dock{grid-template-columns:1fr}}
+@media(max-width:1000px){
+  main:has(#lobby:not([hidden])){padding:8px 10px}
+  #lobby.lobby:not([hidden]){grid-template-columns:minmax(0,1fr);grid-template-rows:none;grid-template-areas:"top" "rail" "center" "side" "bar";overflow-y:auto!important;align-content:start;padding-bottom:4px!important}
+  .rail{flex-direction:row;gap:6px;padding:6px;align-self:stretch}.rail-btn{flex:1;flex-direction:row;justify-content:center;gap:8px;padding:12px 6px}.rail-btn i{font-size:20px}.rail-btn span{font-size:12px}.rail-btn:hover{transform:none}
+  .stage{flex:none!important;height:300px}.lobby:not(.view-player) .stage{height:130px}
+  .tab-panels{overflow:visible}
+  .side{min-height:240px}
+  .lb-bar{position:sticky;bottom:0;z-index:5;flex-direction:column;align-items:stretch;gap:10px}#lobby #start.launch{width:100%;min-width:0;padding:15px}
+  .lb-top{flex-direction:column;align-items:stretch}.lb-top-right{justify-content:flex-start}
+  .stage-info b{max-width:60vw}
+}
+@media(max-width:560px){.rail-btn span{display:none}.lb-logo b{font-size:19px}.mode-cards{grid-template-columns:1fr 1fr}}
+@media(prefers-reduced-motion:reduce){#lobby *,#lobby{animation:none!important;transition:none!important}}

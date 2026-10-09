@@ -124,7 +124,10 @@ def public_map():
             "teleporters": [{"ax": a, "ay": b, "bx": c, "by": d} for a, b, c, d in TELEPORTERS]}
 
 def map_catalog():
-    return [{"id": k, "name": v["name"], "w": v["w"], "h": v["h"]} for k, v in MAPS.items()]
+    # Le catalogue contient la géométrie de chaque carte pour les aperçus du lobby.
+    return [{"id": k, "name": v["name"], "w": v["w"], "h": v["h"], "walls": v["walls"], "theme": THEMES[v["theme"]],
+             "teleporters": list(v.get("teleporters", [])), "ice": v.get("ice", False), "random": v.get("random", False)}
+            for k, v in MAPS.items()]
 
 # ---------------------------------------------------------------------------
 # Modes de jeu, réglages et bonus

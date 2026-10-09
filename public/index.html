@@ -5,8 +5,19 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Tank en carton</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="lobby.css">
 </head>
 <body>
+  <!-- Écran d'accueil -->
+  <div id="intro" class="intro">
+    <canvas id="introCanvas"></canvas>
+    <div class="intro-vignette"></div>
+    <div class="intro-content">
+      <h1 class="intro-title"><span>TANK</span> <span>EN</span> <span>CARTON</span></h1>
+      <button id="introPlay" class="intro-play" type="button">JOUER</button>
+    </div>
+  </div>
+
   <main>
     <header>
       <div class="brand">
@@ -16,53 +27,164 @@
       <span id="net">Connexion...</span>
     </header>
 
-    <section id="lobby" class="lobby-card">
-      <div class="lobby-topbar">
-        <div class="name-block"><label class="name-field">Ton pseudo<input id="name" maxlength="16" value="Joueur"></label><div class="color-row"><span>Ta couleur</span><div id="colorPicker" class="color-picker"></div></div></div>
-        <div class="lobby-top-actions"><canvas id="mapPreview" class="map-preview" width="200" height="116" aria-label="Aperçu de la carte"></canvas><label class="map-picker"><span>Mode</span><select id="modeSelect"><option value="teams">⚔ Équipes</option><option value="br">👑 Battle royale</option><option value="koth">⛰ Roi de la colline</option><option value="ctf">🚩 Capture du drapeau</option><option value="elim">💀 Élimination</option></select></label><label class="map-picker"><span>Carte</span><select id="mapSelect"><option value="carton">Carton classique</option></select></label><span class="lobby-badge"><span class="status-dot"></span>Salon LAN</span></div>
+    <section id="lobby" class="lobby view-player">
+      <canvas id="lobbyFx" class="lobby-fx" aria-hidden="true"></canvas>
+
+      <!-- Barre du haut -->
+      <div class="lb-top">
+        <div class="lb-logo"><span class="brand-mark">▰</span><div><b>TANK EN CARTON</b><small>Salon LAN</small></div></div>
+        <div class="lb-top-right">
+          <button type="button" class="chip chip-join" data-tab="options" title="Infos de connexion : QR code et adresse"><span>📡</span><b id="joinTop">…</b></button>
+          <span class="chip" id="netTop"><span class="status-dot"></span><span id="netTopText">Connexion...</span></span>
+          <div class="chip chip-user"><span id="userDot" class="user-dot"></span><b id="userName">Joueur</b><em id="hostBadge" class="badge">INVITÉ</em></div>
+        </div>
       </div>
-      <div id="brBanner" class="br-banner"></div>
-      <div class="lobby-extras">
-        <section id="settingsPanel" class="settings-panel">
-          <div class="settings-head"><span class="eyebrow">RÉGLAGES DE LA PARTIE</span><small id="settingsHint">Seul l'hôte peut les modifier.</small></div>
-          <div class="settings-row">
-            <label class="setting"><span id="winsLabel">Manches pour gagner</span><input id="setWins" type="number" min="1" max="15" step="1"></label>
-            <label class="setting" id="zoneSetting"><span>Vitesse de la zone</span><select id="setZone"><option value="slow">Lente</option><option value="normal">Normale</option><option value="fast">Rapide</option></select></label>
-          </div>
-          <div class="setting"><span>Bonus activés</span><div id="setPowers" class="power-chips"></div></div>
+
+      <!-- Navigation à gauche -->
+      <nav class="rail" role="tablist" aria-label="Sections du lobby">
+        <button type="button" class="rail-btn active" role="tab" data-tab="player"><i>🪖</i><span>Tank</span></button>
+        <button type="button" class="rail-btn" role="tab" data-tab="match"><i>🎮</i><span>Partie</span></button>
+        <button type="button" class="rail-btn" role="tab" data-tab="teams"><i>👥</i><span>Lobby</span><b id="tabCount" class="tab-count">0</b></button>
+        <button type="button" class="rail-btn" role="tab" data-tab="options"><i>⚙</i><span>Options</span></button>
+      </nav>
+
+      <!-- Centre : tank + panneaux -->
+      <div class="center">
+        <section class="stage" aria-label="Aperçu de ton char">
+          <canvas id="playerPreview"></canvas>
+          <div class="stage-info"><small>TON CHAR</small><b id="stageName">Joueur</b><span id="previewCaption">Classe Léger</span></div>
         </section>
-        <section id="joinCard" class="join-card">
-          <div id="qr" class="qr"></div>
-          <div><span class="eyebrow">REJOINDRE DEPUIS UN AUTRE APPAREIL</span><b id="joinUrl">…</b><small id="joinOther">Même Wi-Fi requis. Scanne le QR code ou tape l'adresse.</small></div>
-        </section>
+
+        <div class="tab-panels">
+          <!-- Section Tank / Joueur -->
+          <section class="tab-panel active" data-panel="player">
+            <div class="player-dock">
+              <div class="panel-card name-card">
+                <div class="name-block"><label class="name-field">Ton pseudo<input id="name" maxlength="16" value="Joueur" autocomplete="off"></label><div class="color-row"><span>Ta couleur</span><div id="colorPicker" class="color-picker"></div></div></div>
+              </div>
+              <section class="class-picker">
+                <div class="class-picker-head"><div><span class="eyebrow">CLASSE</span></div><small id="classHint">Modifiable jusqu'au lancement de la partie.</small></div>
+                <div id="classGrid" class="class-grid"></div>
+              </section>
+            </div>
+          </section>
+
+          <!-- Section Partie -->
+          <section class="tab-panel" data-panel="match">
+            <div class="panel-card">
+              <div class="settings-head"><span class="eyebrow">MODE DE JEU</span><small id="settingsHint">Seul l'hôte peut les modifier.</small></div>
+              <div id="modeGrid" class="mode-cards">
+                <button type="button" class="mode-card" data-mode="teams"><canvas class="mode-art" width="320" height="170"></canvas><b>Équipes</b><small>Jaune contre bleu, la dernière équipe en vie gagne la manche.</small></button>
+                <button type="button" class="mode-card" data-mode="br"><canvas class="mode-art" width="320" height="170"></canvas><b>Battle royale</b><small>Chacun pour soi dans une zone qui rétrécit.</small></button>
+                <button type="button" class="mode-card" data-mode="koth"><canvas class="mode-art" width="320" height="170"></canvas><b>Roi de la colline</b><small>Tenez le cercle central pour accumuler du temps.</small></button>
+                <button type="button" class="mode-card" data-mode="ctf"><canvas class="mode-art" width="320" height="170"></canvas><b>Capture du drapeau</b><small>Volez le drapeau ennemi et ramenez-le à votre base.</small></button>
+                <button type="button" class="mode-card" data-mode="elim"><canvas class="mode-art" width="320" height="170"></canvas><b>Élimination</b><small>Un nombre de vies limité, le dernier survivant gagne.</small></button>
+              </div>
+              <select id="modeSelect" hidden><option value="teams">Équipes</option><option value="br">Battle royale</option><option value="koth">Roi de la colline</option><option value="ctf">Capture du drapeau</option><option value="elim">Élimination</option></select>
+              <div id="brBanner" class="br-banner"></div>
+            </div>
+
+            <div class="panel-card">
+              <div class="settings-head"><span class="eyebrow">CARTE</span><small>Clique sur une carte pour la voir en grand</small></div>
+              <div id="mapGallery" class="map-gallery"></div>
+              <select id="mapSelect" hidden><option value="carton">Carton classique</option></select>
+            </div>
+
+            <div class="match-row">
+              <section id="settingsPanel" class="panel-card settings-panel">
+                <span class="eyebrow">RÉGLAGES</span>
+                <div class="settings-row">
+                  <label class="setting"><span id="winsLabel">Manches pour gagner</span><input id="setWins" type="number" min="1" max="15" step="1"></label>
+                  <label class="setting" id="zoneSetting"><span>Vitesse de la zone</span><select id="setZone"><option value="slow">Lente</option><option value="normal">Normale</option><option value="fast">Rapide</option></select></label>
+                </div>
+              </section>
+            </div>
+
+            <div class="panel-card">
+              <div class="settings-head"><span class="eyebrow">BONUS ACTIVÉS</span><small>Seuls les bonus activés apparaissent en partie</small></div>
+              <div id="setPowers" class="power-grid"></div>
+            </div>
+          </section>
+
+          <!-- Section Lobby / Équipes -->
+          <section class="tab-panel" data-panel="teams">
+            <div id="teamBoard" class="team-board">
+              <section class="team-column br-column" hidden>
+                <div class="team-column-head"><div><span class="team-dot br"></span><h2>Participants</h2></div><span id="playerCount" class="team-count">0</span></div>
+                <div class="team-actions"><button data-team="player" class="join-team">Participer</button><button data-add-bot="player" class="secondary">+ BOT</button></div>
+                <div id="playerPlayers" class="roster-list"></div>
+              </section>
+              <section class="team-column yellow-column">
+                <div class="team-column-head"><div><span class="team-dot yellow"></span><h2>Équipe jaune</h2></div><span id="yellowCount" class="team-count">0</span></div>
+                <div class="team-actions"><button data-team="yellow" class="join-team">Rejoindre</button><button data-add-bot="yellow" class="secondary">+ BOT</button></div>
+                <div id="yellowPlayers" class="roster-list"></div>
+              </section>
+              <section class="team-column spectator-column">
+                <div class="team-column-head"><div><span class="team-dot grey"></span><h2>Spectateurs</h2></div><span id="spectatorCount" class="team-count">0</span></div>
+                <div class="team-actions centered"><button data-team="spectator" class="join-team">Rejoindre</button></div>
+                <div id="spectatorPlayers" class="roster-list"></div>
+              </section>
+              <section class="team-column blue-column">
+                <div class="team-column-head"><div><span class="team-dot blue"></span><h2>Équipe bleue</h2></div><span id="blueCount" class="team-count">0</span></div>
+                <div class="team-actions"><button data-team="blue" class="join-team">Rejoindre</button><button data-add-bot="blue" class="secondary">+ BOT</button></div>
+                <div id="bluePlayers" class="roster-list"></div>
+              </section>
+            </div>
+            <small class="panel-note">Les bots sont illimités. Une grande quantité peut réduire les performances.</small>
+          </section>
+
+          <!-- Section Options -->
+          <section class="tab-panel" data-panel="options">
+            <div class="opt-grid">
+              <div class="panel-card">
+                <span class="eyebrow">AUDIO</span>
+                <label class="switch"><input type="checkbox" id="soundToggle" checked><span class="switch-ui"></span><span class="switch-text"><b>Sons</b><small>Tirs, ricochets, explosions…</small></span></label>
+                <label class="slider"><span>Volume <em id="volumeVal">70 %</em></span><input type="range" id="volumeRange" min="0" max="100" step="5" value="70"></label>
+              </div>
+              <div class="panel-card">
+                <span class="eyebrow">VISÉE ET CONFORT</span>
+                <label class="switch"><input type="checkbox" id="mouseToggle"><span class="switch-ui"></span><span class="switch-text"><b>Viser à la souris</b><small>La tourelle suit le curseur, clic gauche pour tirer.</small></span></label>
+                <label class="slider"><span>Sensibilité de la visée <em id="sensVal">Instantanée</em></span><input type="range" id="sensRange" min="1" max="10" step="1" value="10"><small>Sans effet si la visée à la souris est désactivée.</small></label>
+                <label class="switch"><input type="checkbox" id="screamerToggle" checked><span class="switch-ui"></span><span class="switch-text"><b>Screamer</b><small>Une surprise quand je meurs.</small></span></label>
+              </div>
+            </div>
+
+            <div class="panel-card touch-card">
+              <div class="settings-head"><span class="eyebrow">TABLETTE / ÉCRAN TACTILE</span><small id="touchHint"></small></div>
+              <label class="switch"><input type="checkbox" id="touchToggle"><span class="switch-ui"></span><span class="switch-text"><b>Activer les boutons tactiles</b><small>Croix directionnelle et boutons d'action pendant la partie.</small></span></label>
+              <div class="touch-layout">
+                <div class="touch-sliders">
+                  <label class="slider"><span>Taille des boutons <em id="touchSizeVal">100 %</em></span><input type="range" id="touchSize" min="60" max="160" step="5" value="100"></label>
+                  <label class="slider"><span>Opacité <em id="touchOpacityVal">70 %</em></span><input type="range" id="touchOpacity" min="25" max="100" step="5" value="70"></label>
+                  <label class="switch"><input type="checkbox" id="touchSwap"><span class="switch-ui"></span><span class="switch-text"><b>Inverser gauche / droite</b><small>Pour les gauchers.</small></span></label>
+                  <button type="button" id="touchReset" class="button-ghost">Réinitialiser</button>
+                </div>
+                <div class="touch-preview-wrap"><div id="touchPreview" class="touch-preview"></div><small>Aperçu de la disposition</small></div>
+              </div>
+            </div>
+
+            <section id="joinCard" class="panel-card join-card">
+              <div id="qr" class="qr"></div>
+              <div><span class="eyebrow">REJOINDRE DEPUIS UN AUTRE APPAREIL</span><b id="joinUrl">…</b><small id="joinOther">Même Wi-Fi requis. Scanne le QR code ou tape l'adresse.</small></div>
+            </section>
+          </section>
+        </div>
       </div>
-      <section class="class-picker">
-        <div class="class-picker-head"><div><span class="eyebrow">TON CHAR</span><h2>Choisis ta classe</h2></div><small id="classHint">Modifiable jusqu'au lancement de la partie.</small></div>
-        <div id="classGrid" class="class-grid"></div>
-      </section>
-      <div id="teamBoard" class="team-board">
-        <section class="team-column br-column" hidden>
-          <div class="team-column-head"><div><span class="team-dot br"></span><h2>Participants</h2></div><span id="playerCount" class="team-count">0</span></div>
-          <div class="team-actions"><button data-team="player" class="join-team">Participer</button><button data-add-bot="player" class="secondary">+ BOT</button></div>
-          <div id="playerPlayers" class="roster-list"></div>
-        </section>
-        <section class="team-column yellow-column">
-          <div class="team-column-head"><div><span class="team-dot yellow"></span><h2>Équipe jaune</h2></div><span id="yellowCount" class="team-count">0</span></div>
-          <div class="team-actions"><button data-team="yellow" class="join-team">Rejoindre</button><button data-add-bot="yellow" class="secondary">+ BOT</button></div>
-          <div id="yellowPlayers" class="roster-list"></div>
-        </section>
-        <section class="team-column spectator-column">
-          <div class="team-column-head"><div><span class="team-dot grey"></span><h2>Spectateurs</h2></div><span id="spectatorCount" class="team-count">0</span></div>
-          <div class="team-actions centered"><button data-team="spectator" class="join-team">Rejoindre</button></div>
-          <div id="spectatorPlayers" class="roster-list"></div>
-        </section>
-        <section class="team-column blue-column">
-          <div class="team-column-head"><div><span class="team-dot blue"></span><h2>Équipe bleue</h2></div><span id="blueCount" class="team-count">0</span></div>
-          <div class="team-actions"><button data-team="blue" class="join-team">Rejoindre</button><button data-add-bot="blue" class="secondary">+ BOT</button></div>
-          <div id="bluePlayers" class="roster-list"></div>
-        </section>
+
+      <!-- Joueurs connectés à droite -->
+      <aside class="side" aria-label="Joueurs connectés">
+        <div class="side-head"><h2>JOUEURS</h2><span id="sideCount" class="team-count">0</span><span id="sideBotSlot" class="side-bot"></span></div>
+        <div id="liveRoster" class="live-roster"></div>
+      </aside>
+
+      <!-- Barre de lancement -->
+      <div class="lb-bar">
+        <div class="lb-state">
+          <p id="status">Connexion...</p>
+          <div class="lb-chips"><span class="chip" id="chipFighters">⚔ 0 combattant</span><span class="chip" id="chipMode">⚔ Équipes</span><span class="chip" id="chipMap">🗺 Carton classique</span></div>
+        </div>
+        <button id="start" class="launch" hidden><span>LANCER LA PARTIE</span><i>▶</i></button>
       </div>
-      <div class="lobby-footer"><div><p id="status">Connexion...</p><small>Les bots sont illimités. Une grande quantité peut réduire les performances.</small></div><div class="toggles"><label class="screamer-toggle"><input type="checkbox" id="soundToggle" checked><span>🔊 Sons</span></label><label class="screamer-toggle"><input type="checkbox" id="mouseToggle"><span>🖱 Viser à la souris</span></label><label class="screamer-toggle"><input type="checkbox" id="screamerToggle" checked><span>😱 Screamer quand je meurs</span></label></div><button id="start" hidden>Lancer la partie <span>→</span></button></div>
     </section>
 
     <section id="game" hidden>
@@ -112,6 +234,18 @@
         <div class="modal-actions"><button id="cancelBotModal" type="button" class="button-ghost">Annuler</button></div>
       </div>
     </div>
+  <div id="mapModal" class="modal-backdrop" hidden>
+    <div class="modal-card map-modal" role="dialog" aria-modal="true" aria-labelledby="mapModalTitle">
+      <button id="closeMapModal" class="modal-close" type="button" aria-label="Fermer">×</button>
+      <span class="modal-kicker" id="mapKicker">CARTE</span>
+      <h2 id="mapModalTitle"></h2>
+      <canvas id="mapZoom" width="1000" height="600"></canvas>
+      <div id="mapLegend" class="map-legend"></div>
+      <p id="mapTip" class="map-tip"></p>
+      <div class="modal-actions"><button id="cancelMapModal" type="button" class="button-ghost">Fermer</button><button id="chooseMap" type="button" class="button-primary">Choisir cette carte</button></div>
+    </div>
+  </div>
+  <div id="touchControls" class="touch-controls" hidden></div>
   <div id="screamer" class="screamer" hidden aria-hidden="true"><img id="screamerImg" alt=""></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" async></script>
   <script src="game.js"></script>
